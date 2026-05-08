@@ -267,10 +267,13 @@ export function analyzeSpeechPatterns(contextMessages) {
             else if (wordCount > 20) speakerData[speaker].longSentences++;
         });
         
-        // 한국어 어미 (반말/존댓말)
-        const banmalEndings = (text.match(/[다아야지네군요]\.|[다아야지네군]\.|~다\b|~야\b|~어\b/g) || []).length;
-        const jondaetmalEndings = (text.match(/요\.|습니다|입니다|시오|십시오|세요/g) || []).length;
-        d.banmal += banmalEndings;
+        // 한국어 어미 (반말/존댓말) - 정확한 패턴만 매칭
+        // 반말: -야, -어, -지, -다 + 종결 (단 -다음 같은 것 제외)
+        const banmalEndings = (text.match(/[다어야지네군](?=[.!?\s"」』]|$)/g) || []).length;
+        const jondaetmalEndings = (text.match(/요(?=[.!?\s"」』]|$)|습니다|입니다|시오|십시오|세요/g) || []).length;
+        // 반말이 존댓말로 오탐되는 케이스 보정
+        const correctedBanmal = Math.max(0, banmalEndings - jondaetmalEndings);
+        d.banmal += correctedBanmal;
         d.jondaetmal += jondaetmalEndings;
         
         // 영어 사투리 마커

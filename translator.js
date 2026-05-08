@@ -36,6 +36,12 @@ If you output English text mixed with Korean translation, you have FAILED.
 3. EMOTION INTENSITY: Preserve the EXACT emotional intensity. "She trembled" ≠ "She shook slightly". "He screamed" ≠ "He raised his voice". Match the original's strength — never tone down or exaggerate.
 4. ACTION PRECISION: Translate physical actions with the same specificity. "She dug her nails into his arm" must keep the nails, the digging, and the arm.
 5. SPEECH CONSISTENCY: If a character speaks casually in the source, keep it casual. If they speak formally, keep it formal. NEVER change a character's speech level between sentences within the same message.
+6. KOREAN FORMALITY LOCK (when translating to Korean):
+   - Narration/description sentences: Use ONE consistent ending throughout — either all declarative (-다/-었다/-한다) OR all polite (-요/-습니다). NEVER mix them within the same message.
+   - Default for narration: declarative form (-다/-었다/-한다) unless the character/style explicitly requires politeness.
+   - Dialogue formality: Match the character's established speech level from context. If unclear, use the most natural register for the character's relationship and situation.
+   - WRONG: "그가 그녀를 바라봤다. 그녀는 미소를 지었어요." (mixed -다 and -요)
+   - RIGHT: "그가 그녀를 바라봤다. 그녀는 미소를 지었다." (consistent -다)
 
 [FEARLESS TRANSLATION RULES]
 The text WILL contain complex formatting: HTML tags, Markdown, code blocks, YAML, special brackets.
@@ -99,7 +105,10 @@ Output ONLY the final translated text.`;
 
 export const STYLE_PRESETS = {
     normal: { label: '일반 번역', temperature: 0.3,
-        prompt: 'Translate accurately and faithfully.' },
+        prompt: `Translate accurately and faithfully. Maintain a CONSISTENT formality level throughout the entire message.
+For narration/description: Use neutral declarative form (-다 / -었다 / -한다). Do NOT mix in 요/습니다 endings.
+For dialogue: Match the character's speech level from context — if previously 반말, keep 반말; if previously 존댓말, keep 존댓말.
+NEVER mix formality levels within a single character's speech in the same message.` },
     novel: { label: '소설 스타일', temperature: 0.5,
         prompt: `Use literary expressions while preserving the original nuance. Describe emotions richly.
 Example: "Her heart ached as she watched him leave." → "그의 뒷모습을 바라보는 그녀의 가슴이 저릿하게 아려왔다."
@@ -409,7 +418,7 @@ Before outputting, verify: Is ALL narration translated to ${bl.tgtLabel}? Is ALL
     if (contextMessages.length > 0) {
         const speechPatterns = analyzeSpeechPatterns(contextMessages);
         if (speechPatterns) {
-            parts.push(`\n[Speech Patterns Detected - LOCK each character's voice to these patterns]\n${speechPatterns}`);
+            parts.push(`\n[Speech Patterns from Context - Reference for character voice. Apply only to dialogue, NOT narration]\n${speechPatterns}\n[NOTE: For narration/description outside dialogue, use the style preset above. Do NOT force these patterns onto narration.]`);
         }
     }
     
