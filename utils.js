@@ -104,6 +104,30 @@ export function cleanResult(text, originalText = null) {
     // 패턴3: 『text』[한국어] → 『text [한국어]』
     cleaned = cleaned.replace(/『([^』]*?)』\s*\[([^\]]+)\]/g, '『$1 [$2]』');
     
+    // 🚨 AI 거부/오류 응답 감지 (도구 거부, 검색 강제, 정책 거부 등)
+    if (originalText) {
+        const refusalPatterns = [
+            /Google 검색을 수행해야|구글 검색을 수행해야/i,
+            /도구 사용을 강제하는|도구를 사용해야/i,
+            /이 작업을 수행할 수 없습니다|작업을 수행할 수 없어요|작업을 수행하기 어렵/i,
+            /I (cannot|can'?t|am unable to) (perform|complete|fulfill|do|process) (this|that)/i,
+            /I (need|must|have) to (search|use) (Google|the web|a tool)/i,
+            /I'?m unable to (assist|help) with/i,
+            /I cannot provide|I can'?t provide/i,
+            /violates? (my|the|content) (guidelines|policy|policies)/i,
+            /죄송하지만.*수행할 수 없|죄송합니다.*도와드릴 수 없/i,
+            /사용자 사양을 준수하면서/i,
+        ];
+        // 거부 패턴이 본문 시작 100자 안에 있으면 거부 응답으로 판정
+        const startSegment = cleaned.substring(0, 200);
+        for (const pattern of refusalPatterns) {
+            if (pattern.test(startSegment)) {
+                console.warn('[CAT] 🚨 AI 거부 응답 감지. 결과 폐기 → 재번역 필요.');
+                return "";
+            }
+        }
+    }
+    
     // 🚨 AI 생성모드 감지: 번역이 아닌 RP 이어쓰기/시스템 프롬프트 번역 방지
     if (originalText) {
         const ratio = cleaned.length / originalText.length;

@@ -274,16 +274,46 @@ export async function fetchTranslation(text, settings, stContext, options = {}) 
         // 🚨 병기 후처리: "text."[번역] → "text. [번역]" 자동 교정
         const bilingualMode = settings.dialogueBilingual || 'off';
         if (bilingualMode !== 'off' && cleaned) {
+            // [REVERSED 자동 교정] "한국어 [English]" → "English [한국어]" (역순으로 나온 경우)
+            cleaned = cleaned.replace(/"([^"]*?[가-힣][^"]*?)\s*\[([^\]]*[a-zA-Z][^\]]*)\]([^"]*?)"/g, (match, kor, eng, rest) => {
+                // 한국어 비율이 높은 경우만 역순으로 판정 (의도된 [영어 약어] 같은 건 보호)
+                const korChars = (kor.match(/[가-힣]/g) || []).length;
+                const engChars = (eng.match(/[a-zA-Z]/g) || []).length;
+                if (korChars > 3 && engChars > 3) {
+                    console.log('[CAT] 🔄 병기 역순 감지 → 자동 교정');
+                    return `"${eng.trim()} [${kor.trim()}]${rest}"`;
+                }
+                return match;
+            });
             // "text"[번역] → "text [번역]" (따옴표 밖에 있는 [번역]을 안으로 이동)
             cleaned = cleaned.replace(/"([^"]*?)"\s*\[([^\]]+)\]/g, '"$1 [$2]"');
             // "text."[번역]" → "text. [번역]" (이미 따옴표 안인데 마침표 직후 붙은 경우)
             cleaned = cleaned.replace(/\."\s*\[/g, '. [');
+        } else if (bilingualMode === 'off' && cleaned) {
+            // 🚨 병기 OFF인데 결과에 병기 흔적 (대사 내 [한국어]) 있으면 정리
+            const beforeClean = cleaned;
+            // "영어 텍스트 [한국어]" 형태 → 한국어만 남기기
+            cleaned = cleaned.replace(/"([^"]*?[a-zA-Z][^"]*?)\s*\[([^\]]*[가-힣][^\]]*)\]([^"]*?)"/g, '"$2$3"');
+            cleaned = cleaned.replace(/「([^」]*?[a-zA-Z][^」]*?)\s*\[([^\]]*[가-힣][^\]]*)\]([^」]*?)」/g, '「$2$3」');
+            cleaned = cleaned.replace(/『([^』]*?[a-zA-Z][^』]*?)\s*\[([^\]]*[가-힣][^\]]*)\]([^』]*?)』/g, '『$2$3』');
+            // 추가: 따옴표 밖 영어 묘사 + [한국어] 형태도 정리
+            // "영어 묘사. [한국어 묘사.]" 형태 (지문에 잔존하는 병기)
+            cleaned = cleaned.replace(/([a-zA-Z][a-zA-Z\s,.'!?]+)\s*\[([^\]]*[가-힣][^\]]*)\]/g, '$2');
+            if (beforeClean !== cleaned) {
+                console.log('[CAT] 🧹 병기 OFF 모드 - 잔존 병기 패턴 자동 정리');
+            }
         }
         
         _lastDebugLog.cleaned = cleaned;
         if (!cleaned || cleaned.trim().length === 0) { 
-            _lastDebugLog.error = '번역 결과 비어있음';
-            catNotify(`${getThemeEmoji()} 번역 결과가 비어있습니다. 원문 유지.`, "warning"); return null; 
+            _lastDebugLog.error = '번역 결과 비어있음 (AI 거부 또는 오류)';
+            // 원본에 거부 패턴이 있었으면 더 구체적으로 안내
+            if (result && /검색을 수행해야|cannot perform|cannot provide|작업을 수행할 수 없|사용자 사양을 준수/i.test(result)) {
+                catNotify(`${getThemeEmoji()} AI가 번역을 거부했어요. 다시 시도해주세요.`, "warning");
+            } else {
+                catNotify(`${getThemeEmoji()} 번역 결과가 비어있습니다. 원문 유지.`, "warning");
+            }
+            return null; 
         }
         await setCached(text, targetLang, cleaned, thought, getCacheModelKey(settings));
         return { text: cleaned, lang: targetLang, fromCache: false };
@@ -330,53 +360,81 @@ function assemblePrompt(text, targetLang, isToEnglish, settings, options = {}) {
         };
         const bl = bilingualLangMap[bilingualMode] || bilingualLangMap['ko-en'];
         parts.push(`
-[BILINGUAL DIALOGUE MODE - HIGHEST PRIORITY]
-This rule OVERRIDES all other translation instructions for quoted dialogue.
+[BILINGUAL DIALOGUE MODE - HIGHEST PRIORITY OVERRIDE]
+This message uses BILINGUAL DIALOGUE format. Apply these rules STRICTLY.
 
-[NARRATION/DESCRIPTION RULE - CRITICAL]
-ALL text OUTSIDE quotation marks "" MUST BE FULLY TRANSLATED into ${bl.tgtLabel}.
-This includes: descriptions, actions, character thoughts, scene-setting, all narrative prose.
-NEVER leave narration in ${bl.srcLabel}. NEVER leave it untranslated.
-NEVER add the original ${bl.srcLabel} narration in brackets after the ${bl.tgtLabel} translation.
+═══════════════════════════════════════════
+RULE A: NARRATION (text OUTSIDE quotation marks)
+═══════════════════════════════════════════
+TRANSLATE ALL narration FULLY into ${bl.tgtLabel}.
+This is NOT optional. This includes:
+- Descriptions ("He walked down the hall" → "그는 복도를 걸었다")
+- Actions ("She raised her gun" → "그녀가 총을 들어올렸다")
+- Internal thoughts ("He wondered" → "그는 궁금해했다")
+- Scene-setting ("The room was dark" → "방은 어두웠다")
+- Speech tags ("he said" → "그가 말했다")
+- ALL prose between dialogue lines
 
-[DIALOGUE RULE]
-1. Dialogue (text INSIDE quotation marks ""): Keep the ORIGINAL ${bl.srcLabel} text intact, then append ${bl.tgtLabel} translation inside [] BEFORE the closing quotation mark.
-2. Format: "Original dialogue. [${bl.tgtLabel} 번역.]"
-3. Apply this to EVERY quoted dialogue without exception. Do NOT skip any.
-4. Other quote styles (「」, 『』, "") follow the same rule.
-5. CRITICAL PLACEMENT: The [translation] MUST be INSIDE the quotation marks, BEFORE the closing quote.
+❌ NEVER leave narration in ${bl.srcLabel}.
+❌ NEVER add original narration in brackets like "그가 말했다 [he said]".
 
-[CORRECT vs WRONG - READ CAREFULLY]
-✅ CORRECT (narration translated, dialogue bilingual):
-He looked at her. → 그는 그녀를 바라보았다.
-"I love you." → "I love you. [널 사랑해.]"
+═══════════════════════════════════════════
+RULE B: DIALOGUE (text INSIDE quotation marks)
+═══════════════════════════════════════════
+For DIALOGUE ONLY (text wrapped in "" / 「」 / 『』 / ""):
+KEEP the original ${bl.srcLabel} text → ADD ${bl.tgtLabel} translation in [] → INSIDE the closing quote.
 
-Full sentence:
+CORRECT FORMAT:
+"<${bl.srcLabel} dialogue> [<${bl.tgtLabel} translation>]"
+
+NOT:
+"<${bl.tgtLabel} translation> [<${bl.srcLabel} dialogue>]"  ← REVERSED, WRONG!
+"<${bl.srcLabel} dialogue>"[<${bl.tgtLabel} translation>]   ← bracket OUTSIDE quote, WRONG!
+
+═══════════════════════════════════════════
+CONCRETE EXAMPLES (memorize these)
+═══════════════════════════════════════════
+
+SOURCE:
 He looked at her. "I love you," he whispered.
-→ 그는 그녀를 바라보았다. "I love you, [널 사랑해,]" 그가 속삭였다.
 
-❌ WRONG (narration left in source language):
-He looked at her. "I love you, [널 사랑해.]" he whispered.
-(THIS IS WRONG: "He looked at her" and "he whispered" must be in Korean)
+CORRECT OUTPUT:
+그는 그녀를 바라보았다. "I love you, [널 사랑해,]" 그가 속삭였다.
 
-❌ WRONG (narration with bracket annotation):
-그는 그녀를 바라보았다. [He looked at her.] 
-(THIS IS WRONG: do NOT add original narration in brackets)
+EXPLANATION:
+- "He looked at her" → narration → "그는 그녀를 바라보았다" (full Korean)
+- "I love you," → dialogue → "I love you, [널 사랑해,]" (English KEPT + Korean in brackets INSIDE quotes)
+- "he whispered" → narration → "그가 속삭였다" (full Korean)
 
-❌ WRONG (dialogue placement):
-"I love you."[널 사랑해.]
-"I love you." [널 사랑해.]
-(THIS IS WRONG: bracket must be INSIDE the closing quote)
+❌ WRONG (narration in English):
+He looked at her. "I love you, [널 사랑해,]" he whispered.
 
-[EXAMPLES]
-Source: ${bl.exNarSrc} "${bl.exSrc}"
-Output: ${bl.exNarTgt} "${bl.exSrc} [${bl.exTgt}]"
+❌ WRONG (reversed):
+그는 그녀를 바라보았다. "널 사랑해, [I love you,]" 그가 속삭였다.
 
-Source: ${bl.exNarSrc} "${bl.exSrc}" ${bl.exNarSrc}. "${bl.exSrc}"
-Output: ${bl.exNarTgt} "${bl.exSrc} [${bl.exTgt}]" ${bl.exNarTgt}. "${bl.exSrc} [${bl.exTgt}]"
+❌ WRONG (no Korean in brackets):
+그는 그녀를 바라보았다. "I love you," 그가 속삭였다.
 
-[FINAL CHECK]
-Before outputting, verify: Is ALL narration translated to ${bl.tgtLabel}? Is ALL dialogue in bilingual format? If you see ANY ${bl.srcLabel} text outside quotation marks in your output (other than glossary terms), you have FAILED.
+❌ WRONG (only Korean, no English):
+그는 그녀를 바라보았다. "널 사랑해," 그가 속삭였다.
+
+═══════════════════════════════════════════
+SELF-CHECK BEFORE OUTPUT
+═══════════════════════════════════════════
+Verify EACH of these:
+1. Is every sentence outside quotes in ${bl.tgtLabel}? (If NO → fix it)
+2. Is every dialogue in format: "<original ${bl.srcLabel}> [<${bl.tgtLabel} translation>]"? (If NO → fix it)
+3. Are translation brackets INSIDE the closing quote? (If NO → fix it)
+4. Did I keep the ORIGINAL ${bl.srcLabel} text in dialogue? (If you only wrote ${bl.tgtLabel} → REVERSED, fix)
+`);
+    } else {
+        // 🚨 병기 OFF 모드: 컨텍스트에 병기 흔적이 있어도 절대 따라하지 말 것
+        parts.push(`
+[STANDARD TRANSLATION MODE - NO BILINGUAL FORMAT]
+Translate the ENTIRE text fully into the target language.
+Even if the context messages contain bilingual format like "English [한국어]", DO NOT replicate that format.
+Output should contain NO [translation] brackets, NO original-language preservation.
+Just plain, fully-translated text.
 `);
     }
     
@@ -473,7 +531,10 @@ export function gatherContextMessages(msgId, stContext, range = 1) {
     if (range <= 0) return []; const chat = stContext.chat; const messages = []; const startIdx = Math.max(0, msgId - range);
     for (let i = startIdx; i < msgId; i++) {
         if (chat[i] && chat[i].mes) {
-            const cleanMsg = chat[i].mes.replace(/<(?!!--)[^>]+>/g, '').trim();
+            let cleanMsg = chat[i].mes.replace(/<(?!!--)[^>]+>/g, '').trim();
+            // 🚨 컨텍스트에 병기 형식이 섞여있으면 제거 (현재 메시지 번역에 오염 방지)
+            // "English [한국어]" → "English" 만 남김
+            cleanMsg = cleanMsg.replace(/\s*\[[^\]]*[가-힣ぁ-んァ-ヶ一-龥][^\]]*\]/g, '');
             if (cleanMsg) {
                 // 🚨 화자 정보 포함: AI가 캐릭터 말투 일관성을 유지하도록
                 const speaker = chat[i].is_user ? (stContext.name1 || 'User') : (chat[i].name || stContext.name2 || 'Character');
