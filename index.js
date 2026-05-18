@@ -406,20 +406,35 @@ jQuery(async () => {
     function handleEditSaved(msgId, capturedText = null) {
         const id = parseInt(typeof msgId === 'object' ? msgId.messageId : msgId);
         const msg = stContext.chat[id];
-        if (!msg) return;
-        if (msg.is_system === true || msg.extra?.media?.length > 0) return;
-        if (!msg.extra?.original_mes) return;
-        
+        if (!msg) {
+            console.log(`[CAT] ❌ handleEditSaved #${id}: msg 없음`);
+            return;
+        }
+        if (msg.is_system === true || msg.extra?.media?.length > 0) {
+            console.log(`[CAT] ❌ handleEditSaved #${id}: system 또는 media`);
+            return;
+        }
         const mode = settings.afterEditMode || 'notify';
-        if (mode === 'keep') return;
+        if (mode === 'keep') {
+            console.log(`[CAT] ⏸️ handleEditSaved #${id}: keep 모드`);
+            return;
+        }
         
-        // 🚨 v1.0.5: 유저 인풋 메시지 별도 처리 (한국어/영어 방향 무관, 손상 검사 없음)
+        // 🚨 v1.0.5: 유저 인풋 메시지 별도 처리 (original_mes 없어도 진입, 한국어/영어 방향 무관)
         if (msg.is_user) {
+            console.log(`[CAT] 🔵 handleEditSaved #${id}: 유저 분기 진입 (original_mes: ${msg.extra?.original_mes ? '있음' : '없음'})`);
             handleUserEditSaved(id, msg, capturedText, mode);
             return;
         }
         
+        // 봇 메시지는 original_mes 필수 (번역되지 않은 봇 메시지는 무시)
+        if (!msg.extra?.original_mes) {
+            console.log(`[CAT] ❌ handleEditSaved #${id}: 봇이지만 original_mes 없음`);
+            return;
+        }
+        
         // (이하는 봇 메시지 처리 — 기존 동작 유지)
+        console.log(`[CAT] 🟢 handleEditSaved #${id}: 봇 분기 진입 (mode: ${mode})`);
         // 새 원문 결정: captured(영어 백업)가 있으면 우선, 없으면 msg.mes
         let newOriginal = msg.mes;
         // 🚨 v1.0.5: 한-영병기 모드면 한국어 차단 모두 패스
@@ -515,20 +530,31 @@ jQuery(async () => {
     function handleUserEditSaved(id, msg, capturedText, mode) {
         // 새 원문: captured 우선, 없으면 msg.mes
         const newOriginal = (capturedText && capturedText.length > 0) ? capturedText : msg.mes;
-        if (!newOriginal || newOriginal.length < 1) return;
-        if (newOriginal === msg.extra.original_mes) return;
+        if (!newOriginal || newOriginal.length < 1) {
+            console.log(`[CAT] ❌ handleUserEditSaved #${id}: newOriginal 비어있음`);
+            return;
+        }
+        // original_mes 없는 케이스도 진행 (자동 번역 안 된 유저 인풋도 ✏️ 수정 시 번역 시도)
+        const prevOriginal = msg.extra?.original_mes;
+        if (prevOriginal && newOriginal === prevOriginal) {
+            console.log(`[CAT] ⏸️ handleUserEditSaved #${id}: 원문 변경 없음`);
+            return;
+        }
         
         // 🚨 v1.0.5: userInputMode 검사 (english-only일 때 한국어 위주 인풋 스킵)
         const userInputMode = settings.userInputMode || 'english-only';
         if (userInputMode === 'english-only' && isMostlyKorean(newOriginal)) {
-            console.log(`[CAT] 🚫 유저 #${id}: 영어 전용 모드, 한국어 위주 인풋 스킵`);
+            console.log(`[CAT] 🚫 유저 #${id}: 영어 전용 모드, 한국어 위주 인풋 스킵 ("${newOriginal.substring(0,30)}...")`);
             return;
         }
         
-        console.log(`[CAT] ✏️ 유저 인풋 원문 갱신 #${id}: "${msg.extra.original_mes.substring(0,30)}..." → "${newOriginal.substring(0,30)}..."`);
+        console.log(`[CAT] ✏️ 유저 인풋 원문 갱신 #${id}: "${(prevOriginal||'(없음)').substring(0,30)}..." → "${newOriginal.substring(0,30)}..." (mode: ${mode})`);
         
-        // 히스토리에 이전 원문 push (양방향 모드는 한국어 검사 패스, 영어전용 모드도 통과)
-        pushEditHistory(msg, msg.extra.original_mes, userInputMode === 'bidirectional');
+        // 히스토리에 이전 원문 push (있을 때만, 모드 따라)
+        if (!msg.extra) msg.extra = {};
+        if (prevOriginal) {
+            pushEditHistory(msg, prevOriginal, userInputMode === 'bidirectional');
+        }
         
         // 새 원문 적용
         msg.mes = newOriginal;
