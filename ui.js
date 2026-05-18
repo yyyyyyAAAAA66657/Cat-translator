@@ -831,7 +831,7 @@ export function setupMutationObserver(processMessageFn, revertMessageFn, setting
                 // 🚨 ST 연필 → 원문(영어) 그대로 표시 (ST 기본 동작 유지)
                 // 🚨 🐟/🍖 팝업에서 진입 → _editWatcher가 처리하므로 여기서 안 건드림
             } else if (editArea.length === 0 && mesBlock.data('cat-edit-active')) {
-                // 편집 모드 종료
+                // 편집 모드 종료 - 백업 데이터만 정리 (실제 처리는 index.js handleEditSaved + 폴링이 담당)
                 mesBlock.removeData('cat-edit-active');
                 
                 // 🚨 🐟/🍖 편집 팝업에서 진입한 편집은 _editWatcher가 처리 → 여기서 스킵
@@ -842,61 +842,26 @@ export function setupMutationObserver(processMessageFn, revertMessageFn, setting
                 mesBlock.removeData('cat-edit-display').removeData('cat-edit-original');
                 
                 if (savedDisplay && savedOriginal) {
-                    if (msg.mes === savedDisplay) {
-                        // 수정 없이 저장 (번역문이 들어온 경우) → 원문 복원
+                    // msg.mes가 한국어로 오염되었으면 원문 복원만 (자동 재번역은 index.js handleEditSaved가 담당)
+                    const hasKorean = /[가-힣]/.test(msg.mes) && msg.mes.length > 10;
+                    if (hasKorean) {
+                        if (!msg.extra) msg.extra = {};
+                        msg.extra.original_mes = savedOriginal;
                         msg.mes = savedOriginal;
-                        if (!msg.extra) msg.extra = {};
-                        msg.extra.original_mes = savedOriginal;
                         msg.extra.display_text = savedDisplay;
                         mesBlock.attr('data-cat-translated', 'true');
+                        stContext.updateMessageBlock(msgId, msg);
+                        console.log(`[CAT] 🛡️ 옵저버: 한국어 차단, 원문 보존 #${msgId}`);
                     } else if (msg.mes === savedOriginal) {
-                        // 🚨 취소 또는 수정 없이 닫기 → display_text 재적용
+                        // 변경 없음 → display_text 재적용
                         if (!msg.extra) msg.extra = {};
                         msg.extra.original_mes = savedOriginal;
                         msg.extra.display_text = savedDisplay;
                         mesBlock.attr('data-cat-translated', 'true');
-                    } else {
-                        // 🚨 ST 연필 = 원문(영어) 수정 → original_mes 갱신
-                        // 🚨 오염 방지: msg.mes가 한국어면 original_mes 덮어쓰기 차단
-                        const hasKorean = /[가-힣]/.test(msg.mes) && msg.mes.length > 10;
-                        if (!msg.extra) msg.extra = {};
-                        if (hasKorean) {
-                            // 한국어가 msg.mes에 들어옴 → 원래 original 보존, 원문 복원
-                            msg.extra.original_mes = savedOriginal;
-                            msg.mes = savedOriginal;
-                            msg.extra.display_text = savedDisplay;
-                            mesBlock.attr('data-cat-translated', 'true');
-                            console.log(`[CAT] 🛡️ 오염 방지: 한국어 차단, 원문 보존 #${msgId}`);
-                            stContext.updateMessageBlock(msgId, msg);
-                        } else {
-                            // 영어 원문이 실제로 수정됨 → 모드별 동작
-                            msg.extra.original_mes = msg.mes;
-                            const mode = settings.afterEditMode || 'notify';
-                            console.log(`[CAT] ✏️ ST 연필 원문 수정 → original_mes 갱신 #${msgId} (mode: ${mode})`);
-                            
-                            if (mode === 'auto') {
-                                // 자동 재번역: display_text 제거 후 재번역 트리거
-                                delete msg.extra.display_text;
-                                mesBlock.removeAttr('data-cat-translated');
-                                stContext.updateMessageBlock(msgId, msg);
-                                catNotify(`${getThemeEmoji()} 원문 수정 감지 → 자동 재번역 중...`, "info");
-                                setTimeout(() => processMessageFn(msgId, false, null, false, false), 300);
-                            } else if (mode === 'keep') {
-                                // 기존 번역 유지 (현재 동작)
-                                msg.extra.display_text = savedDisplay;
-                                mesBlock.attr('data-cat-translated', 'true');
-                                stContext.updateMessageBlock(msgId, msg);
-                            } else {
-                                // notify (기본): 알림 + 재번역 버튼
-                                msg.extra.display_text = savedDisplay;
-                                mesBlock.attr('data-cat-translated', 'true');
-                                stContext.updateMessageBlock(msgId, msg);
-                                showRetranslatePrompt(msgId, processMessageFn);
-                            }
-                        }
+                        stContext.updateMessageBlock(msgId, msg);
                     }
+                    // 영어 수정된 경우는 handleEditSaved에서 처리 → 여기서는 아무것도 안 함
                 }
-                if (!mesBlock.data('cat-edit-active')) {} // updateMessageBlock는 위 분기에서 처리
             }
         });
     });
