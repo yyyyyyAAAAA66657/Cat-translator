@@ -110,7 +110,8 @@ async function processMessage(id, isInput = false, abortSignal = null, silent = 
     // 🚨 숨긴 메시지(Hide) + 이미지/시스템 메시지 자동 번역 스킵
     if (isAutoEvent && (msg.is_hidden || msg.is_system === true || msg.extra?.media?.length > 0 || mesBlock.css('display') === 'none' || mesBlock.hasClass('is_hidden'))) return;
     // 🚨 display_text 안전장치: 번역된 상태인데 display_text 누락 시 보정
-    if (msg.extra?.original_mes && !msg.extra?.display_text) { msg.extra.display_text = msg.mes; }
+    // 🚨 단, data-cat-translated 속성이 있을 때만 발동 (자동 재번역 시 우회를 위해)
+    if (msg.extra?.original_mes && !msg.extra?.display_text && mesBlock.attr('data-cat-translated') === 'true') { msg.extra.display_text = msg.mes; }
     // 🚨 Legacy 감지: 구버전에서 msg.mes가 번역문으로 덮어쓰여진 경우 자동 복원
     if (msg.extra?.original_mes && msg.extra?.display_text && msg.mes === msg.extra.display_text && msg.mes !== msg.extra.original_mes) {
         msg.mes = msg.extra.original_mes;
@@ -347,12 +348,14 @@ jQuery(async () => {
     });
     
     // 🚨 ST 저장 체크 버튼(✓) 클릭 직접 감지 (가장 확실한 백업)
-    $(document).on('click', '.mes_edit_done', function () {
+    // ST 버전마다 클래스명이 다를 수 있어서 다중 셀렉터 사용
+    $(document).on('click', '.mes_edit_done, .mes_edit_save, .edit_mes_save, [class*="mes_edit_done"]', function () {
         const mesBlock = $(this).closest('.mes');
         const msgId = parseInt(mesBlock.attr('mesid'));
-        console.log(`[CAT] ✓ mes_edit_done 클릭 감지 #${msgId}`);
+        console.log(`[CAT] ✓ 저장 버튼 클릭 감지 #${msgId} (class: ${this.className})`);
+        catNotify(`${getThemeEmoji()} 편집 저장 감지 #${msgId}`, "info");
         // ST가 msg.mes 갱신 후 발동 → 약간 딜레이 후 처리
-        setTimeout(() => handleEditSaved(msgId), 200);
+        setTimeout(() => handleEditSaved(msgId), 300);
     });
     
     // 🚨 편집 저장 통합 핸들러 (이벤트/클릭 모두에서 호출)
@@ -385,6 +388,11 @@ jQuery(async () => {
         
         if (mode === 'auto') {
             delete msg.extra.display_text;
+            // 🚨 swipe_translations에서도 현재 swipe 삭제 (restoreSwipeTranslations가 이전 번역으로 복원하는 것 방지)
+            if (msg.extra.swipe_translations && msg.swipe_id !== undefined) {
+                delete msg.extra.swipe_translations[msg.swipe_id];
+            }
+            delete msg.extra.cat_swipe_id;
             $(`.mes[mesid="${id}"]`).removeAttr('data-cat-translated');
             stContext.updateMessageBlock(id, msg);
             console.log(`[CAT] 🔄 자동 재번역 트리거 #${id}`);
@@ -545,7 +553,7 @@ jQuery(async () => {
     
     // 🚨 원문 수정 감지 폴링 (자동 재번역/알림 백업) — 3초 간격
     // 이벤트/옵저버가 누락해도 폴링으로 100% 잡음
-    const _editPollProcessed = new Set();
+    const _editPollProcessed = new Map(); // idx → 처리한 텍스트 fingerprint
     setInterval(() => {
         const mode = settings.afterEditMode || 'notify';
         if (mode === 'keep') return;
@@ -562,23 +570,28 @@ jQuery(async () => {
             
             // 원문이 변경된 메시지 감지
             if (msg.mes === msg.extra.original_mes) {
-                _editPollProcessed.delete(idx); // 동기화된 메시지는 처리 기록 초기화
+                _editPollProcessed.delete(idx);
                 return;
             }
             
             // 이미 처리한 메시지는 스킵
-            const fingerprint = `${idx}:${msg.mes.substring(0, 50)}`;
-            if (_editPollProcessed.has(fingerprint)) return;
-            _editPollProcessed.add(fingerprint);
+            const fingerprint = msg.mes.substring(0, 100);
+            if (_editPollProcessed.get(idx) === fingerprint) return;
+            _editPollProcessed.set(idx, fingerprint);
             
             console.log(`[CAT] 🔍 폴링 감지: 원문 수정 #${idx} (mode: ${mode})`);
+            catNotify(`${getThemeEmoji()} 원문 수정 감지! 처리 중... #${idx}`, "info");
             msg.extra.original_mes = msg.mes;
             
             if (mode === 'auto') {
                 delete msg.extra.display_text;
+                // 🚨 swipe_translations에서도 현재 swipe 삭제 (restoreSwipeTranslations 차단)
+                if (msg.extra.swipe_translations && msg.swipe_id !== undefined) {
+                    delete msg.extra.swipe_translations[msg.swipe_id];
+                }
+                delete msg.extra.cat_swipe_id;
                 $(`.mes[mesid="${idx}"]`).removeAttr('data-cat-translated');
                 stContext.updateMessageBlock(idx, msg);
-                catNotify(`${getThemeEmoji()} 원문 수정 감지 → 자동 재번역 중...`, "info");
                 // 🚨 캐시 우회: 새 원문에 대한 캐시 삭제 (이전 번역 재사용 방지)
                 const modelKey = getCacheModelKey(settings);
                 const targetLang = detectLanguageDirection(msg.mes, settings).targetLang;
