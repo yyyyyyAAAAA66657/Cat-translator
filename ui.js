@@ -564,11 +564,8 @@ export function injectMessageButtons(processMessageFn, revertMessageFn) {
         $(document).on('click', '.cat-mes-history-btn', function (e) {
             e.stopPropagation();
             const msgId = parseInt($(this).data('mesid') || $(this).closest('.mes').attr('mesid'));
-            console.log(`[CAT] 🕓 히스토리 버튼 클릭 #${msgId}`);
             if (!isNaN(msgId) && typeof showEditHistoryPopup === 'function') {
                 showEditHistoryPopup(msgId);
-            } else {
-                console.warn(`[CAT] 🕓 showEditHistoryPopup 함수 없음 또는 msgId 잘못됨`);
             }
         });
     }
@@ -1137,29 +1134,28 @@ export function setupMutationObserver(processMessageFn, revertMessageFn, setting
                 if (msg.extra?.original_mes) mesBlock.data('cat-edit-original', msg.extra.original_mes);
                 
                 // 🚨 v1.0.5: 유저 메시지의 경우 textarea에 원본 강제 삽입
-                // (인풋은 msg.mes가 번역문으로 덮어씌워져서 ✏️ 누르면 한국어가 뜨는 문제 해결)
+                // (인풋은 msg.mes가 번역문으로 덮어씌워져서 ✏️ 누르면 번역본이 뜨는 문제 해결)
                 // ST가 비동기로 textarea 값을 set하는 흐름 대응 — 3단계 시도
                 if (msg.is_user && msg.extra?.original_mes && !mesBlock.data('cat-edit-type')) {
                     const targetOriginal = msg.extra.original_mes;
-                    const forceOriginal = (label) => {
+                    const forceOriginal = () => {
                         const $ta = mesBlock.find('textarea.edit_textarea:visible, textarea.mes_edit_textarea:visible').first();
-                        if ($ta.length === 0) {
-                            console.log(`[CAT] ⚠️ ${label} #${msgId}: textarea 없음`);
-                            return;
-                        }
-                        const currentVal = $ta.val();
-                        console.log(`[CAT] 📝 ${label} #${msgId}: textarea 현재값="${(currentVal||'').substring(0,30)}..." 목표="${targetOriginal.substring(0,30)}..."`);
-                        if (currentVal !== targetOriginal) {
+                        if ($ta.length === 0) return;
+                        if ($ta.val() !== targetOriginal) {
                             setTextareaValue($ta[0], targetOriginal);
-                            // capturedText Map도 갱신 (저장 시 잘못된 캡처 방지)
                             const msgIdStr = String(msgId);
                             window._catCapturedText = window._catCapturedText || new Map();
                             window._catCapturedText.set(msgIdStr, targetOriginal);
                         }
                     };
-                    forceOriginal('편집진입 즉시');
-                    setTimeout(() => forceOriginal('편집진입 +50ms'), 50);
-                    setTimeout(() => forceOriginal('편집진입 +250ms'), 250);
+                    forceOriginal();
+                    setTimeout(forceOriginal, 50);
+                    setTimeout(() => {
+                        forceOriginal();
+                        const $ta = mesBlock.find('textarea').first();
+                        const success = $ta.length > 0 && $ta.val() === targetOriginal;
+                        console.log(`[CAT] 📝 유저 인풋 편집 #${msgId}: textarea → 영어 원본 (${success ? '✓' : '✗'})`);
+                    }, 250);
                 }
                 
                 // 🚨 textarea에 직접 input 리스너 바인딩 (글로벌 Map에 저장)
@@ -1185,7 +1181,6 @@ export function setupMutationObserver(processMessageFn, revertMessageFn, setting
                         }
                         const captured = window._catCapturedText.get(msgIdStr);
                         console.log(`[CAT] ✓ 직접 핸들러 #${msgIdStr} 캡처: ${captured ? captured.substring(0, 50) : '없음'}`);
-                        catNotify(`${getThemeEmoji ? getThemeEmoji() : '🐱'} 편집 저장 #${msgIdStr}`, "info");
                         // index.js의 handleEditSaved를 window에서 호출
                         setTimeout(() => {
                             if (typeof window._catHandleEditSaved === 'function') {
