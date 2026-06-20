@@ -36,12 +36,39 @@ If you output English text mixed with Korean translation, you have FAILED.
 3. EMOTION INTENSITY: Preserve the EXACT emotional intensity. "She trembled" ≠ "She shook slightly". "He screamed" ≠ "He raised his voice". Match the original's strength — never tone down or exaggerate.
 4. ACTION PRECISION: Translate physical actions with the same specificity. "She dug her nails into his arm" must keep the nails, the digging, and the arm.
 5. SPEECH CONSISTENCY: If a character speaks casually in the source, keep it casual. If they speak formally, keep it formal. NEVER change a character's speech level between sentences within the same message.
-6. KOREAN FORMALITY LOCK (when translating to Korean):
-   - Narration/description sentences: Use ONE consistent ending throughout — either all declarative (-다/-었다/-한다) OR all polite (-요/-습니다). NEVER mix them within the same message.
-   - Default for narration: declarative form (-다/-었다/-한다) unless the character/style explicitly requires politeness.
-   - Dialogue formality: Match the character's established speech level from context. If unclear, use the most natural register for the character's relationship and situation.
-   - WRONG: "그가 그녀를 바라봤다. 그녀는 미소를 지었어요." (mixed -다 and -요)
-   - RIGHT: "그가 그녀를 바라봤다. 그녀는 미소를 지었다." (consistent -다)
+6. KOREAN FORMALITY LOCK (when translating to Korean) — CRITICAL CONSISTENCY:
+   
+   **NARRATION RULES (지문/묘사):**
+   - Narration/description sentences: Use ONE consistent ending throughout the ENTIRE message
+   - DEFAULT: declarative form (-다/-었다/-한다/-했다)
+   - NEVER mix -다 with -요/-습니다 within narration of the same message
+   - Even ONE sentence break in formality is a CRITICAL FAILURE
+   
+   **DIALOGUE RULES (대사):**
+   - Each character has ONE formality level: 반말 OR 존댓말 — NEVER both within same message
+   - Lock that character's level from the FIRST sentence and maintain it to the LAST
+   - If context messages show the character spoke in 반말, ALL their dialogue in this message is 반말
+   - If context messages show 존댓말, ALL their dialogue is 존댓말
+   - When context unclear, use the most natural register for the character's relationship
+   
+   **VERIFICATION CHECKLIST before output:**
+   - Re-read every narration sentence: do they ALL end the same way (-다 OR -요, never both)?
+   - Re-read every character's dialogue: same formality throughout?
+   - If you find ONE inconsistency, fix it before output
+   
+   **EXAMPLES:**
+   ❌ CRITICAL FAILURE — Mixed narration formality:
+      "그가 그녀를 바라봤다. 그녀는 미소를 지었어요. 잠시 침묵이 흘렀다."
+      (다 → 요 → 다 = FAIL)
+   ✅ CORRECT — Consistent declarative:
+      "그가 그녀를 바라봤다. 그녀는 미소를 지었다. 잠시 침묵이 흘렀다."
+   
+   ❌ CRITICAL FAILURE — Character flip-flop:
+      Character A: "어디 가?" ... "어디 가시나요?"
+      (반말 → 존댓말 = FAIL)
+   ✅ CORRECT — Locked formality:
+      Character A: "어디 가?" ... "뭐 해?"
+      (consistent 반말)
 
 [FEARLESS TRANSLATION RULES]
 The text WILL contain complex formatting: HTML tags, Markdown, code blocks, YAML, special brackets.
@@ -88,6 +115,48 @@ Source: <!-- [Character Profiles]\\nDesires: To protect her forest.\\n-->
 Correct: <!-- [Character Profiles]\\nDesires: 그녀의 숲을 지키는 것.\\n-->
 
 If the input is a single word, return only the translated single word.
+
+[KOREAN KINSHIP TERMS - CRITICAL]
+English family/relationship terms are AMBIGUOUS in Korean. Translate based on CONTEXT, never default to one form.
+
+**brother (남성 형제):**
+- Older brother spoken to by younger male: "형" (e.g., "Hey brother" by 10yo to 15yo male → "형!")
+- Older brother spoken to by younger female: "오빠" (e.g., girl to older boy → "오빠")
+- Younger brother: "남동생" or just the name
+- Default when age unclear: USE THE NAME, NOT a generic term
+- NEVER default "brother" to "동생" — that means YOUNGER brother specifically
+
+**sister (여성 형제):**
+- Older sister spoken to by younger male: "누나"
+- Older sister spoken to by younger female: "언니"
+- Younger sister: "여동생" or just the name
+- Default when age unclear: USE THE NAME
+- NEVER default "sister" to "언니" — that's specifically "older sister to female"
+
+**Other ambiguous kinship:**
+- uncle → 삼촌/외삼촌/이모부/고모부 (use context, or "아저씨" for non-relative older man)
+- aunt → 이모/고모/외숙모/숙모 (or "아주머니" for non-relative older woman)
+- cousin → 사촌 (acceptable as generic)
+- grandfather/grandmother → 할아버지/할머니 (acceptable as generic)
+
+**RULE: When context provides NO age/gender info → use the character's NAME instead of a generic kinship term.**
+
+WRONG: "My brother arrived" → "내 동생이 도착했다" (assumed younger)
+RIGHT (if older known): "My brother arrived" → "형이 도착했다"
+RIGHT (if name known): "My brother John arrived" → "존이 도착했다"
+RIGHT (unknown): "My brother arrived" → "내 형제가 도착했다" or use name
+
+[DEFAULT TRANSLATION TONE - LOCKED]
+Unless the user explicitly specifies a style or tone via a style preset or custom instruction:
+- DEFAULT: Natural conversational Korean (구어체)
+- Dialogue: Match the character's established voice from context
+- Narration: Declarative form (-다/-었다/-한다) consistently
+- DO NOT randomly switch between formal and informal mid-message
+- DO NOT alternate between literary high-style and casual mid-message
+- DO NOT add ornate/archaic vocabulary unless source has it
+- DO NOT remove naturalness — keep it sounding like real spoken/read Korean
+
+If the user has NOT provided explicit style instructions and the source is in standard English, output STANDARD conversational Korean. Don't get creative with tone.
 
 [REGEX TRIGGER PRESERVATION]
 Some text uses special patterns as UI triggers for info boxes, status panels, etc.
@@ -359,18 +428,52 @@ export async function fetchTranslation(text, settings, stContext, options = {}) 
             }
             return null; 
         }
+        
+        // 🚨 응답 품질 검증: 너무 짧은 응답 감지 (번역 실패)
+        // 원문보다 30% 미만이면 번역 실패 가능성 (yaml/HTML 다 빠진 경우 등)
+        if (cleaned.length < text.length * 0.3 && text.length > 100) {
+            console.warn(`[CAT] ⚠️ 응답 너무 짧음: ${cleaned.length}자 (원문 ${text.length}자, ${Math.round(cleaned.length / text.length * 100)}%)`);
+            catNotify(`${getThemeEmoji()} 번역이 너무 짧아요 (${Math.round(cleaned.length / text.length * 100)}%). 다시 시도해보세요.`, "warning");
+        }
+        
+        // 🚨 번역 언어 검증: 한국어 번역인데 한국어가 거의 없음
+        if (targetLang === 'Korean' && cleaned.length > 50) {
+            const koreanChars = (cleaned.match(/[가-힣]/g) || []).length;
+            const koreanRatio = koreanChars / cleaned.length;
+            if (koreanRatio < 0.15) {
+                console.warn(`[CAT] ⚠️ 한국어 비율 매우 낮음: ${Math.round(koreanRatio * 100)}%`);
+                catNotify(`${getThemeEmoji()} 번역에 한국어가 거의 없어요. AI가 번역 실패한 것 같아요.`, "warning");
+            }
+        }
+        
+        // 🚨 존댓말/반말 혼용 감지 (한국어 번역만)
+        if (targetLang === 'Korean' && cleaned.length > 50) {
+            checkFormalityMix(cleaned);
+        }
+        
         await setCached(text, targetLang, cleaned, thought, getCacheModelKey(settings));
         return { text: cleaned, lang: targetLang, fromCache: false };
     } catch (e) {
         if (e.name === 'AbortError') return null;
         const errMsg = e.message || '알 수 없는 오류';
         _lastDebugLog.error = errMsg;
+        
+        // 🚨 네트워크/시스템 오류 분류 - 어디서 맛탱이 갔는지 명확히
+        const networkErrorMsg = classifyNetworkError(e);
+        
         // Vertex 모델 실패 시 프로젝트 ID/리전 입력 안내
         if (isVertexModel && !settings.vertexProject) {
             $('#ct-vertex-extra').slideDown(200);
             catNotify(`🚨 Vertex 연결 실패! 프로젝트 ID와 리전을 입력해보세요.`, "error");
+        } else if (networkErrorMsg) {
+            // 네트워크 분류기로 명확한 원인 표시
+            catNotify(`${getThemeEmoji()} ${networkErrorMsg}`, "error");
+        } else if (errMsg.includes('[') && errMsg.includes(']')) {
+            // 이미 분류된 메시지 (API_ERROR_MESSAGES 등) - 그대로 표시
+            catNotify(`${getThemeEmoji()} ${errMsg}`, "error");
         } else {
-            catNotify(`${getThemeEmoji()} 오류: ${errMsg}`, "error");
+            // 분류 불가능한 미지의 오류
+            catNotify(`${getThemeEmoji()} ❓ [원인 불명] ${errMsg.substring(0, 80)}`, "error");
         }
         return null;
     }
@@ -571,36 +674,184 @@ Just plain, fully-translated text.
 
 // 🚨 API 에러 한국어 메시지
 const API_ERROR_MESSAGES = {
-    400: '📋 잘못된 요청이에요. 입력을 확인해주세요 (400)',
-    401: '🔑 API 키가 유효하지 않아요 (401)',
-    403: '🚫 API 접근 권한이 없어요 (403)',
-    404: '🔍 API를 찾을 수 없어요. 모델명을 확인해주세요 (404)',
-    429: '⏳ 요청이 너무 많아요. 잠시 후 다시 시도해주세요 (429)',
-    500: '💥 서버 오류가 발생했어요. 잠시 후 다시 시도해주세요 (500)',
-    503: '🔧 서버 점검 중이에요. 잠시 후 다시 시도해주세요 (503)'
+    400: '📋 [입력 오류] AI가 요청을 이해 못 했어요. 원문이 너무 길거나 형식이 이상할 수도 있어요 (400)',
+    401: '🔑 [인증 실패] API 키가 만료됐거나 잘못됐어요. 키를 다시 확인하세요 (401)',
+    403: '🚫 [접근 거부] API 키 권한이 없거나, 해당 모델/지역이 차단됐어요 (403)',
+    404: '🔍 [모델 없음] 모델명을 찾을 수 없어요. 모델 이름 또는 API 엔드포인트 확인하세요 (404)',
+    408: '⏱️ [요청 타임아웃] AI가 시간 안에 응답 못 했어요. 다시 시도해보세요 (408)',
+    413: '📏 [크기 초과] 원문이 너무 길어요. 짧게 나눠보세요 (413)',
+    429: '🚦 [사용량 초과] 분당/일당 한도를 다 썼어요. 잠시 후 다시 시도하세요 (429)',
+    500: '💥 [Gemini 서버 오류] AI 측 문제예요 (Gemini 자체 불안정). 자동 재시도 중... (500)',
+    502: '🔌 [게이트웨이 오류] AI 서버 연결 문제예요. 자동 재시도 중... (502)',
+    503: '🔧 [Gemini 서비스 일시 중단] AI 측 점검 중이에요. 잠시 후 다시 시도하세요 (503)',
+    504: '⏳ [게이트웨이 타임아웃] AI 응답이 너무 느려요. 다시 시도해보세요 (504)'
 };
 
-async function fetchWithRetry(url, body, retries = 3, abortSignal = null, extraHeaders = {}) {
-    const delays = [500, 1000, 2000];
+// 🚨 네트워크/시스템 오류 분류기 - 어디서 맛탱이 갔는지 명확히
+function classifyNetworkError(e) {
+    const msg = e.message || '';
+    const name = e.name || '';
+    
+    // 사용자 취소
+    if (msg === '취소됨' || name === 'AbortError') return null;
+    
+    // 인터넷 연결 끊김
+    if (name === 'TypeError' && /failed to fetch|networkerror|네트워크/i.test(msg)) {
+        return '🌐 [인터넷 끊김] 인터넷 연결이 끊겼어요. Wi-Fi/데이터를 확인하세요';
+    }
+    if (/network|enotfound|econnrefused|econnreset/i.test(msg)) {
+        return '🌐 [네트워크 오류] 네트워크 연결에 문제가 있어요. 잠시 후 다시 시도하세요';
+    }
+    
+    // DNS 문제
+    if (/dns|name not resolved/i.test(msg)) {
+        return '🛰️ [DNS 오류] 서버 주소를 찾을 수 없어요. 인터넷 설정 확인하세요';
+    }
+    
+    // SSL/TLS 문제
+    if (/ssl|tls|certificate/i.test(msg)) {
+        return '🔐 [보안 인증 오류] HTTPS 연결에 문제가 있어요';
+    }
+    
+    // 응답 파싱 실패
+    if (/json|parse|unexpected token/i.test(msg)) {
+        return '📦 [응답 형식 오류] AI 응답이 잘못된 형식이에요 (Gemini 측 일시 오류). 재시도 권장';
+    }
+    
+    // CORS
+    if (/cors|cross-origin/i.test(msg)) {
+        return '🚧 [CORS 오류] 브라우저 보안 정책 차단. 직접 연결 모드 사용해보세요';
+    }
+    
+    // 타임아웃 (내부 60초)
+    if (/응답 시간 초과|timeout/i.test(msg)) {
+        return '⏱️ [응답 지연] AI가 60초 안에 응답 못 했어요. 원문이 너무 길거나 Gemini 측 부하 상태';
+    }
+    
+    // Vertex 관련
+    if (/vertex|gcp|google cloud/i.test(msg)) {
+        return '☁️ [Vertex 연결 오류] GCP 프로젝트/리전 설정을 확인하세요';
+    }
+    
+    return null; // 분류 불가
+}
+
+async function fetchWithRetry(url, body, retries = 5, abortSignal = null, extraHeaders = {}) {
+    // 🚨 안정화 강화: exponential backoff + jitter + 5xx 별도 처리 + timeout
+    // 시도 횟수: 6 (initial + 5 retries) — Gemini 자체 불안정성 완화
+    let lastError;
     for (let attempt = 0; attempt <= retries; attempt++) {
+        let timeoutId;
         try {
-            const fetchOptions = { method: 'POST', headers: { 'Content-Type': 'application/json', ...extraHeaders }, body: JSON.stringify(body) };
-            if (abortSignal) fetchOptions.signal = abortSignal;
+            // 🚨 60초 timeout (hang 방지)
+            const controller = new AbortController();
+            timeoutId = setTimeout(() => controller.abort(), 60000);
+            
+            // 외부 abortSignal과 내부 timeout 둘 다 지원
+            const signal = abortSignal 
+                ? combineSignals(abortSignal, controller.signal)
+                : controller.signal;
+            
+            const fetchOptions = { 
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/json', ...extraHeaders }, 
+                body: JSON.stringify(body),
+                signal
+            };
+            
             const res = await fetch(url, fetchOptions);
+            clearTimeout(timeoutId);
+            
+            // 429 Rate Limit: 더 긴 대기
             if (res.status === 429) {
-                if (attempt < retries) { await sleep(delays[attempt] || 2000); continue; }
+                if (attempt < retries) { 
+                    await sleep(calculateBackoff(attempt, 2000, 30000));
+                    continue; 
+                }
                 throw new Error(API_ERROR_MESSAGES[429]);
             }
+            
+            // 5xx Server Error (Gemini 자주 발생): 재시도
+            if (res.status >= 500 && res.status < 600) {
+                if (attempt < retries) { 
+                    console.warn(`[CAT] 🔁 ${res.status} 서버 오류 → 재시도 ${attempt + 1}/${retries}`);
+                    await sleep(calculateBackoff(attempt, 1500, 20000));
+                    continue; 
+                }
+                throw new Error(API_ERROR_MESSAGES[res.status] || `❌ 서버 오류 (${res.status})`);
+            }
+            
             if (!res.ok) {
                 throw new Error(API_ERROR_MESSAGES[res.status] || `❌ 알 수 없는 오류 (${res.status})`);
             }
+            
             return await res.json();
         } catch (e) {
-            if (e.name === 'AbortError') throw e;
+            if (timeoutId) clearTimeout(timeoutId);
+            
+            // 외부 abort (사용자 취소)는 즉시 종료
+            if (abortSignal?.aborted) throw new Error('취소됨');
+            if (e.name === 'AbortError' && !abortSignal?.aborted) {
+                // 우리 timeout으로 인한 abort
+                lastError = new Error('⏱️ 응답 시간 초과 (60초)');
+                if (attempt < retries) {
+                    console.warn(`[CAT] ⏱️ 타임아웃 → 재시도 ${attempt + 1}/${retries}`);
+                    await sleep(calculateBackoff(attempt, 1000, 10000));
+                    continue;
+                }
+                throw lastError;
+            }
+            
+            lastError = e;
             if (attempt >= retries) throw e;
-            await sleep(delays[attempt] || 2000);
+            
+            // 네트워크 오류 등 일반 에러 재시도
+            console.warn(`[CAT] 🔁 ${e.message?.substring(0, 50) || '오류'} → 재시도 ${attempt + 1}/${retries}`);
+            await sleep(calculateBackoff(attempt, 1000, 15000));
         }
     }
+    throw lastError || new Error('재시도 실패');
+}
+
+// exponential backoff with jitter (thundering herd 방지)
+function calculateBackoff(attempt, base = 1000, max = 15000) {
+    const exp = Math.min(base * Math.pow(2, attempt), max);
+    const jitter = Math.random() * 0.3 * exp; // 0-30% jitter
+    return Math.floor(exp + jitter);
+}
+
+// 🚨 존댓말/반말 혼용 감지 (지문 기준)
+// 따옴표 밖의 narration만 보고 -다 와 -요/-습니다 같이 쓰는지 검사
+function checkFormalityMix(text) {
+    // 대사 (따옴표 안) 제거
+    let narration = text.replace(/"[^"]*"|'[^']*'|「[^」]*」|『[^』]*』/g, '');
+    
+    // 평서문 종결 어미 카운트
+    // -다: -다., -이다., -었다., -한다., -겠다. 등
+    // -요/-습니다: -요., -아요., -어요., -습니다., -ㅂ니다. 등
+    const decl = (narration.match(/[가-힣](다|었다|했다|한다|이다|된다|겠다)\.\s/g) || []).length;
+    const poli = (narration.match(/[가-힣](요|아요|어요|예요|네요|군요|습니다|ㅂ니다|입니다)\.\s/g) || []).length;
+    
+    // 둘 다 있고 비율이 80:20 안쪽이면 혼용
+    if (decl >= 2 && poli >= 2) {
+        const total = decl + poli;
+        const minRatio = Math.min(decl, poli) / total;
+        if (minRatio > 0.15) {
+            console.warn(`[CAT] ⚠️ 지문 존댓말/반말 혼용 감지: -다 ${decl}개, -요/-습니다 ${poli}개`);
+            catNotify(`${getThemeEmoji()} 지문에 -다와 -요가 섞였어요 (${decl}/${poli}). 재번역 권장.`, "warning");
+        }
+    }
+}
+
+// 두 AbortSignal 결합 (외부 + 내부 timeout)
+function combineSignals(...signals) {
+    const controller = new AbortController();
+    for (const signal of signals) {
+        if (!signal) continue;
+        if (signal.aborted) { controller.abort(); return controller.signal; }
+        signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+    return controller.signal;
 }
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 export function gatherContextMessages(msgId, stContext, range = 1) {
