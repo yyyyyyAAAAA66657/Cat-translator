@@ -126,27 +126,27 @@ The source text uses BLANK LINES (double newlines \n\n) to separate paragraphs. 
 
 **Common failure mode (DO NOT DO THIS):**
 Source:
-```
+\`\`\`
 "Hello," she said.
 
 He turned around. The street was empty.
 
 "Are you alright?"
-```
+\`\`\`
 
 WRONG (merged into one block):
-```
+\`\`\`
 "안녕." 그녀가 말했다. 그가 돌아섰다. 거리는 비어 있었다. "괜찮아?"
-```
+\`\`\`
 
 CORRECT (paragraph structure preserved):
-```
+\`\`\`
 "안녕." 그녀가 말했다.
 
 그가 돌아섰다. 거리는 비어 있었다.
 
 "괜찮아?"
-```
+\`\`\`
 
 [QUOTATION MARKS - NEVER DROP]
 Every opening quote MUST have a matching closing quote. This is especially critical for:
