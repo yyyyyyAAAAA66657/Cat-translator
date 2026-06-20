@@ -165,6 +165,42 @@ Source: "She glanced over her shoulder. "Are you sure?"
 WRONG output: 그녀가 어깨 너머로 흘끗 봤다. "확실해?"
 RIGHT output: "그녀가 어깨 너머로 흘끗 봤다. "확실해?"
 
+[OUTPUT LANGUAGE PURITY - ABSOLUTE RULE]
+The OUTPUT must be EXCLUSIVELY in the target language. NO MIXING.
+
+**Translating to Korean:**
+- ALL English words MUST be translated to Korean
+- Unknown proper nouns → transliterate (e.g., "Jenkins" → "젠킨스", "Soap" → "소프")
+- Common loanwords already in Korean dictionary are OK (e.g., "메일", "프린터", "버튼")
+- NEVER leave random English like "however", "actually", "well", "anyway" untranslated
+- Output must contain only Korean characters, with English ONLY for:
+  • Code/technical strings inside backticks or HTML tags
+  • Glossary entries whose right side is explicitly English
+
+**Translating to English:**
+- Output must be PURE English with NO Korean characters
+- Korean proper nouns → romanize (e.g., "민수" → "Minsu", "서울" → "Seoul")
+- NEVER leave Korean characters like "시저", "그러나", "그리고" in English output
+- If unsure, transliterate; never leave source language characters
+
+[GLOSSARY - STRICT DIRECTION & APPLICATION]
+Glossary entries are in format "X=Y" where:
+- X = the form that appears in the SOURCE text
+- Y = the form that should appear in the TRANSLATED output
+
+**Direction matters:**
+- If source is Korean and entry is "시저=Caesar":
+  → "시저" appears in Korean source → MUST output as "Caesar" in English translation
+- If source is English and entry is "Caesar=시저":
+  → "Caesar" appears in English source → MUST output as "시저" in Korean translation
+
+**Critical rules:**
+- Apply ONLY entries where the LEFT side actually appears in the source text
+- Do NOT apply entries in reverse direction
+- Do NOT use the right side of an entry to "find" things in the source
+- After applying glossary, the OUTPUT must still be in pure target language
+- NEVER insert source-language form back into the output (e.g., don't put "시저" in English output even if it's in a glossary entry)
+
 If the input is a single word, return only the translated single word.
 
 [KOREAN KINSHIP TERMS - CRITICAL]
@@ -494,6 +530,22 @@ export async function fetchTranslation(text, settings, stContext, options = {}) 
             if (koreanRatio < 0.15) {
                 console.warn(`[CAT] ⚠️ 한국어 비율 매우 낮음: ${Math.round(koreanRatio * 100)}%`);
                 catNotify(`${getThemeEmoji()} 번역에 한국어가 거의 없어요. AI가 번역 실패한 것 같아요.`, "warning");
+            } else if (koreanRatio < 0.5 && koreanRatio >= 0.15) {
+                // 영문이 많이 섞임 - 일부 단어 번역 안 됨
+                const englishWords = (cleaned.match(/\b[a-zA-Z]{4,}\b/g) || []).length;
+                if (englishWords > 5) {
+                    console.warn(`[CAT] ⚠️ 영단어 ${englishWords}개 섞임 (번역 누락 가능)`);
+                    catNotify(`${getThemeEmoji()} 영단어 ${englishWords}개가 번역 안 됨. 사전 등록 권장`, "warning");
+                }
+            }
+        }
+        
+        // 🚨 영어 번역인데 한국어가 섞임 (양방향 모드 문제)
+        if (targetLang === 'English' && cleaned.length > 50) {
+            const koreanChars = (cleaned.match(/[가-힣]/g) || []).length;
+            if (koreanChars > 5) {
+                console.warn(`[CAT] ⚠️ 영어 출력에 한국어 ${koreanChars}자 섞임`);
+                catNotify(`${getThemeEmoji()} 영어 출력에 한국어가 섞였어요. 사전 방향 확인 필요`, "warning");
             }
         }
         
@@ -679,11 +731,17 @@ Just plain, fully-translated text.
             return orig && textLower.includes(orig.toLowerCase());
         });
         if (matchedLines.length > 0) {
-            parts.push(`\n[MANDATORY GLOSSARY - For specific terms only]`);
-            parts.push(`Below is a glossary for SPECIFIC TERMS ONLY. The REST of the text MUST be fully translated normally.`);
-            parts.push(`You MUST use the following glossary for these specific terms when they appear. Apply natural morphological changes (plural, possessive, verb conjugations) according to the context without breaking the term's core meaning.`);
-            parts.push(`CRITICAL: Output ONLY the translated term. NEVER add the original word in brackets, parentheses, or any annotation like "소프[Soap]" or "소프(Soap)". Just use the glossary term directly.`);
-            parts.push(`WARNING: This glossary is NOT the entire translation task. Translate the ENTIRE text into the target language, using these glossary entries only for the specific listed terms.`);
+            const targetLangName = targetLang || 'the target language';
+            parts.push(`\n[MANDATORY GLOSSARY - DIRECTION-AWARE]`);
+            parts.push(`Format: "SOURCE_FORM=TARGET_FORM" where left side is in source text and right side replaces it in the output.`);
+            parts.push(`These entries ONLY apply when the LEFT-side term appears in the source text. The RIGHT side is what MUST appear in the ${targetLangName} output.`);
+            parts.push(`CRITICAL OUTPUT RULES:`);
+            parts.push(`1. Output must be EXCLUSIVELY in ${targetLangName}. NO source-language characters mixed in.`);
+            parts.push(`2. When you see "X=Y" entry and X is in the source, write Y in your output (NOT X).`);
+            parts.push(`3. Apply natural morphological changes (plural, possessive, conjugation) without breaking the term's core.`);
+            parts.push(`4. NEVER add the original word in brackets/parentheses (e.g. no "소프[Soap]" or "Caesar(시저)").`);
+            parts.push(`5. The rest of the text MUST be fully translated normally — glossary is for SPECIFIC TERMS only.`);
+            parts.push(`Glossary entries:`);
             parts.push(matchedLines.join('\n'));
         }
     }

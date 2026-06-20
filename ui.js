@@ -416,21 +416,37 @@ export function setupSettingsPanel(settings, stContext, saveSettingsFn) {
 
 export function collectSettings() {
     const modelVal = $('#ct-model').val();
+    
+    // 🚨 textarea가 DOM에 없거나 비어있고, _settingsRef에 값이 있으면 보존
+    // (설정 패널 닫힌 상태에서 saveSettings 호출되는 경우 데이터 손실 방지)
+    const dictTextarea = $('#ct-dictionary');
+    const promptTextarea = $('#ct-user-prompt');
+    const dictValue = dictTextarea.length > 0 ? (dictTextarea.val() || '') : (_settingsRef?.dictionary || '');
+    const promptValue = promptTextarea.length > 0 ? (promptTextarea.val() || '') : (_settingsRef?.userPrompt || '');
+    
+    // textarea가 DOM에 있는데 비어있고 _settingsRef에 값이 있으면 → 일시적 미초기화 가능성
+    const safeDictValue = (dictTextarea.length > 0 && !dictValue && _settingsRef?.dictionary) 
+        ? _settingsRef.dictionary 
+        : dictValue;
+    const safePromptValue = (promptTextarea.length > 0 && !promptValue && _settingsRef?.userPrompt) 
+        ? _settingsRef.userPrompt 
+        : promptValue;
+    
     return {
-        profile: $('#ct-profile').val() || '', customKey: $('#ct-key').val() || '',
+        profile: $('#ct-profile').val() || _settingsRef?.profile || '', customKey: $('#ct-key').val() || _settingsRef?.customKey || '',
         vertexKey: _settingsRef?.vertexKey || '', vertexProject: _settingsRef?.vertexProject || '',
         vertexRegion: _settingsRef?.vertexRegion || 'global',
-        directModel: modelVal === 'custom' ? ($('#ct-model-custom').val() || 'gemini-2.5-flash') : (modelVal || 'gemini-2.5-flash'),
-        customModelName: $('#ct-model-custom').val() || '', autoMode: $('#ct-auto-mode').val() || 'none',
-        bidirectional: $('#ct-bidirectional').val() || 'off', dialogueBilingual: $('#ct-dialogue-bilingual').val() || 'off', iconVisibility: $('#ct-icon-visibility').val() || 'all',
-        targetLang: $('#ct-lang').val() || 'Korean', style: $('#ct-style').val() || 'normal',
-        temperature: parseFloat($('#ct-temperature').val()) || 0.3, maxTokens: parseInt($('#ct-max-tokens').val()) || 8192,
-        contextRange: Math.min(6, Math.max(0, parseInt($('#ct-context-range').val()) || 1)),
-        userPrompt: $('#ct-user-prompt').val() || '', dictionary: $('#ct-dictionary').val() || '',
-        retranslateStrength: $('#ct-retranslate-strength').val() || 'normal',
-        afterEditMode: $('#ct-after-edit').val() || 'notify',
-        previewTranslate: 'off',
-        previewCleanup: $('#ct-preview-cleanup').val() || 'off',
+        directModel: modelVal === 'custom' ? ($('#ct-model-custom').val() || _settingsRef?.directModel || 'gemini-2.5-flash') : (modelVal || _settingsRef?.directModel || 'gemini-2.5-flash'),
+        customModelName: $('#ct-model-custom').val() || _settingsRef?.customModelName || '', autoMode: $('#ct-auto-mode').val() || _settingsRef?.autoMode || 'none',
+        bidirectional: $('#ct-bidirectional').val() || _settingsRef?.bidirectional || 'off', dialogueBilingual: $('#ct-dialogue-bilingual').val() || _settingsRef?.dialogueBilingual || 'off', iconVisibility: $('#ct-icon-visibility').val() || _settingsRef?.iconVisibility || 'all',
+        targetLang: $('#ct-lang').val() || _settingsRef?.targetLang || 'Korean', style: $('#ct-style').val() || _settingsRef?.style || 'normal',
+        temperature: parseFloat($('#ct-temperature').val()) || _settingsRef?.temperature || 0.3, maxTokens: parseInt($('#ct-max-tokens').val()) || _settingsRef?.maxTokens || 8192,
+        contextRange: Math.min(6, Math.max(0, parseInt($('#ct-context-range').val()) || _settingsRef?.contextRange || 1)),
+        userPrompt: safePromptValue, dictionary: safeDictValue,
+        retranslateStrength: $('#ct-retranslate-strength').val() || _settingsRef?.retranslateStrength || 'normal',
+        afterEditMode: $('#ct-after-edit').val() || _settingsRef?.afterEditMode || 'notify',
+        previewTranslate: _settingsRef?.previewTranslate || 'off',
+        previewCleanup: $('#ct-preview-cleanup').val() || _settingsRef?.previewCleanup || 'off',
         promptPresets: _settingsRef?.promptPresets || {}, charPresetMap: _settingsRef?.charPresetMap || {}
     };
 }

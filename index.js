@@ -43,7 +43,30 @@ function getCurrentTheme() {
 }
 
 function saveSettings(updateBaseline = false) {
-    const collected = collectSettings(); Object.assign(settings, collected);
+    const collected = collectSettings();
+    
+    // 🚨 데이터 손실 방지: 빈 값으로 덮어쓰기 차단
+    // 시나리오: textarea가 DOM에 없거나 일시적으로 비어있을 때 빈 값으로 저장되는 거 방지
+    if (!collected.dictionary && settings.dictionary) {
+        collected.dictionary = settings.dictionary;
+        console.log('[CAT] 🛡️ dictionary 보호: 빈 값 덮어쓰기 차단');
+    }
+    if (!collected.userPrompt && settings.userPrompt) {
+        collected.userPrompt = settings.userPrompt;
+        console.log('[CAT] 🛡️ userPrompt 보호');
+    }
+    if ((!collected.charPresetMap || Object.keys(collected.charPresetMap).length === 0) && 
+        settings.charPresetMap && Object.keys(settings.charPresetMap).length > 0) {
+        collected.charPresetMap = settings.charPresetMap;
+        console.log('[CAT] 🛡️ charPresetMap 보호: 채팅방별 설정 보존');
+    }
+    if ((!collected.promptPresets || Object.keys(collected.promptPresets).length === 0) && 
+        settings.promptPresets && Object.keys(settings.promptPresets).length > 0) {
+        collected.promptPresets = settings.promptPresets;
+        console.log('[CAT] 🛡️ promptPresets 보호');
+    }
+    
+    Object.assign(settings, collected);
     // 🚨 baseline 갱신 조건: 수동 저장 + 프리셋 비활성 상태에서만
     if (updateBaseline) {
         const currentChar = (SillyTavern?.getContext?.()?.name2) || stContext.name2 || '';
