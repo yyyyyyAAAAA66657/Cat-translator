@@ -10,7 +10,7 @@ import { setupSettingsPanel, collectSettings, updateCacheStats, injectMessageBut
 const EXT_NAME = "cat-translator";
 const stContext = getContext();
 
-const defaultSettings = { profile: '', customKey: '', vertexKey: '', vertexProject: '', vertexRegion: 'global', directModel: 'gemini-2.5-flash', customModelName: '', autoMode: 'none', bidirectional: 'off', dialogueBilingual: 'off', iconVisibility: 'all', targetLang: 'Korean', style: 'normal', temperature: 0.3, maxTokens: 8192, contextRange: 1, userPrompt: '', dictionary: '', retranslateStrength: 'normal', afterEditMode: 'notify', previewTranslate: 'off', promptPresets: {}, charPresetMap: {} };
+const defaultSettings = { profile: '', customKey: '', vertexKey: '', vertexProject: '', vertexRegion: 'global', directModel: 'gemini-2.5-flash', customModelName: '', autoMode: 'none', bidirectional: 'off', dialogueBilingual: 'off', iconVisibility: 'all', targetLang: 'Korean', style: 'normal', temperature: 0.3, maxTokens: 8192, contextRange: 1, userPrompt: '', dictionary: '', retranslateStrength: 'normal', afterEditMode: 'notify', previewTranslate: 'off', previewCleanup: 'off', promptPresets: {}, charPresetMap: {} };
 // 베타 → 정식 설정 마이그레이션 (기존 사용자 설정 보존)
 if (!extension_settings[EXT_NAME] && extension_settings["cat-translator-beta"]) {
     extension_settings[EXT_NAME] = { ...extension_settings["cat-translator-beta"] };
@@ -774,22 +774,86 @@ function setupChatPreviewTranslation() {
         }
     }
     
+    // 🚨 미리보기 마크업 정리 (yaml/HTML 태그/info_panel 등 숨김)
+    function cleanupPreviewText(text) {
+        if (!text) return text;
+        let cleaned = text;
+        
+        // 1. ST 시스템 HTML 태그 제거 (정리할 대상 태그 목록)
+        const SYSTEM_TAGS = '(?:memo|small|info_panel|status_box|character_card|chat_box|world_info|no_history|history|details|summary|narrator_note|user_note|scene|location|time|details_panel|stats|stat_block|sys|system|inventory|state|status)';
+        // 여는 태그와 닫는 태그 모두 제거 (속성 포함)
+        cleaned = cleaned.replace(new RegExp(`</?${SYSTEM_TAGS}(?:\\s+[^>]*)?>`, 'gi'), '');
+        
+        // 2. 코드블록 마커 제거 (```yaml, ```json, ``` 등)
+        cleaned = cleaned.replace(/```[a-zA-Z]*\s*/g, '');
+        cleaned = cleaned.replace(/```/g, '');
+        
+        // 3. 수평선 제거 (___, ---, ***)
+        cleaned = cleaned.replace(/^[ \t]*[_\-*]{3,}[ \t]*$/gm, '');
+        
+        // 4. yaml 형식의 메타 데이터 라인 제거 (- 키: 값 형태)
+        // 예: "- 시간: 2025년", "- 등장인물: 김홍진"
+        cleaned = cleaned.replace(/^[ \t]*-\s*[가-힣\w][가-힣\w\s]*:\s*.+$/gm, '');
+        
+        // 5. 빈 줄 정리 (3개 이상 → 2개)
+        cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
+        
+        // 6. 너무 짧아지면 (예: 다 정리해서 거의 안 남음) 원본 일부라도 살리기
+        if (cleaned.length < 20 && text.length > 100) {
+            // 원본에서 첫 200자만 ASCII/한글 기준으로 추출
+            return text.substring(0, 200) + (text.length > 200 ? '...' : '');
+        }
+        
+        return cleaned;
+    }
+    
     // 큐에 쌓인 미리보기 순차 처리 (rate limit 방지)
     async function processQueue() {
         if (_queueProcessing) return;
-        if ((settings.previewTranslate || 'off') === 'off') return;
+        
+        const translateMode = settings.previewTranslate || 'off';
+        const cleanupMode = settings.previewCleanup || 'off';
+        
+        // 둘 다 off면 아무것도 안 함
+        if (translateMode === 'off' && cleanupMode === 'off') return;
         
         _queueProcessing = true;
         try {
-            const elements = findPreviewElements();
-            if (elements.length === 0) return;
+            // 🚨 마크업 정리는 모든 미리보기 (영문/한국어) 대상
+            if (cleanupMode === 'on') {
+                for (const selector of PREVIEW_SELECTORS) {
+                    try {
+                        document.querySelectorAll(selector).forEach(el => {
+                            if (el.dataset.catCleanupDone === 'true') return;
+                            const text = el.textContent?.trim();
+                            if (!text || text.length < 30) return;
+                            
+                            const cleaned = cleanupPreviewText(text);
+                            if (cleaned !== text && cleaned.length > 0) {
+                                if (!el.dataset.catOriginalPreview) {
+                                    el.dataset.catOriginalPreview = text;
+                                }
+                                el.textContent = cleaned;
+                                el.dataset.catCleanupDone = 'true';
+                                el.title = `🐱 원본 보기 (정리 전)`;
+                            }
+                        });
+                    } catch (e) {}
+                }
+            }
             
-            console.log(`[CAT] 📁 미리보기 ${elements.length}개 발견`);
-            
-            // 1초 간격으로 순차 처리 (API rate limit 방지)
-            for (const { el, text } of elements) {
-                await translatePreview(el, text);
-                await new Promise(r => setTimeout(r, 800)); // 0.8초 간격
+            // 번역 처리 (영문만)
+            if (translateMode !== 'off') {
+                const elements = findPreviewElements();
+                if (elements.length > 0) {
+                    console.log(`[CAT] 📁 미리보기 ${elements.length}개 발견 (번역 대상)`);
+                    
+                    // 1초 간격으로 순차 처리 (API rate limit 방지)
+                    for (const { el, text } of elements) {
+                        await translatePreview(el, text);
+                        await new Promise(r => setTimeout(r, 800)); // 0.8초 간격
+                    }
+                }
             }
         } finally {
             _queueProcessing = false;
@@ -798,13 +862,15 @@ function setupChatPreviewTranslation() {
     
     // MutationObserver: 채팅 팝업 등장 감지
     const previewObserver = new MutationObserver(() => {
-        if ((settings.previewTranslate || 'off') === 'off') return;
+        const translateMode = settings.previewTranslate || 'off';
+        const cleanupMode = settings.previewCleanup || 'off';
+        if (translateMode === 'off' && cleanupMode === 'off') return;
         // debounce - 500ms 후 한 번만 처리
         clearTimeout(previewObserver._debounce);
         previewObserver._debounce = setTimeout(processQueue, 500);
     });
     previewObserver.observe(document.body, { childList: true, subtree: true });
     
-    console.log(`[CAT] 📁 채팅 미리보기 번역 옵저버 등록`);
+    console.log(`[CAT] 📁 채팅 미리보기 옵저버 등록 (번역+정리)`);
 }
 

@@ -98,6 +98,13 @@ export function setupSettingsPanel(settings, stContext, saveSettingsFn) {
                     <option value="auto" ${settings.previewTranslate === 'auto' ? 'selected' : ''}>자동 번역 (캐시 없으면 API 호출)</option>
                 </select>
             </div>
+            <div class="cat-setting-row">
+                <label>🧹 미리보기 마크업 정리 <span style="font-size:0.8em; opacity:0.6;">(yaml/&lt;memo&gt;/&lt;info_panel&gt; 같은 raw 태그 숨김)</span></label>
+                <select id="ct-preview-cleanup" class="text_pole">
+                    <option value="off" ${(!settings.previewCleanup || settings.previewCleanup === 'off') ? 'selected' : ''}>OFF (원본 그대로)</option>
+                    <option value="on" ${settings.previewCleanup === 'on' ? 'selected' : ''}>ON (대화/지문만 깔끔하게)</option>
+                </select>
+            </div>
             <div class="cat-setting-row" style="display:none"><label>시스템 보호막 (🔒 고정)</label><textarea id="ct-shield" class="text_pole cat-readonly-area" rows="3" readonly>${SYSTEM_SHIELD}</textarea></div>
             <div class="cat-setting-row">
                 <label style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:4px;">
@@ -153,7 +160,7 @@ export function setupSettingsPanel(settings, stContext, saveSettingsFn) {
     };
     
     // 모든 설정 필드에 자동 저장 연결
-    $('#ct-profile, #ct-auto-mode, #ct-bidirectional, #ct-dialogue-bilingual, #ct-lang, #ct-style, #ct-temperature, #ct-max-tokens, #ct-context-range, #ct-retranslate-strength, #ct-after-edit, #ct-preview-translate').on('change', autoSave);
+    $('#ct-profile, #ct-auto-mode, #ct-bidirectional, #ct-dialogue-bilingual, #ct-lang, #ct-style, #ct-temperature, #ct-max-tokens, #ct-context-range, #ct-retranslate-strength, #ct-after-edit, #ct-preview-translate, #ct-preview-cleanup').on('change', autoSave);
     $('#ct-key, #ct-model-custom, #ct-user-prompt, #ct-dictionary').on('input', autoSave);
     
     $('#ct-model').val(settings.directModel).on('change', function () {
@@ -386,7 +393,7 @@ export function setupSettingsPanel(settings, stContext, saveSettingsFn) {
         if (!confirm('모든 설정을 초기값으로 되돌리시겠습니까?')) return;
         $('#ct-profile').val(''); $('#ct-key').val('');
         $('#ct-model').val('gemini-2.5-flash'); $('#ct-model-custom').val('').hide();
-        $('#ct-auto-mode').val('none'); $('#ct-bidirectional').val('off'); $('#ct-dialogue-bilingual').val('off'); $('#ct-icon-visibility').val('all'); $('#ct-lang').val('Korean'); $('#ct-style').val('normal'); $('#ct-retranslate-strength').val('normal'); $('#ct-after-edit').val('notify'); $('#ct-preview-translate').val('off');
+        $('#ct-auto-mode').val('none'); $('#ct-bidirectional').val('off'); $('#ct-dialogue-bilingual').val('off'); $('#ct-icon-visibility').val('all'); $('#ct-lang').val('Korean'); $('#ct-style').val('normal'); $('#ct-retranslate-strength').val('normal'); $('#ct-after-edit').val('notify'); $('#ct-preview-translate').val('off'); $('#ct-preview-cleanup').val('off');
         $('#ct-temperature').val(0.3); $('#ct-max-tokens').val(8192); $('#ct-context-range').val(1);
         $('#ct-user-prompt').val(''); $('#ct-dictionary').val(''); $('#ct-dict-reset').text('📭');
         settings.promptPresets = {}; settings.charPresetMap = {}; $('#ct-prompt-preset').val('').find('option:not(:first)').remove();
@@ -424,6 +431,7 @@ export function collectSettings() {
         retranslateStrength: $('#ct-retranslate-strength').val() || 'normal',
         afterEditMode: $('#ct-after-edit').val() || 'notify',
         previewTranslate: $('#ct-preview-translate').val() || 'off',
+        previewCleanup: $('#ct-preview-cleanup').val() || 'off',
         promptPresets: _settingsRef?.promptPresets || {}, charPresetMap: _settingsRef?.charPresetMap || {}
     };
 }
