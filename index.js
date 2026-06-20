@@ -713,7 +713,7 @@ function setupChatPreviewTranslation() {
     }
     
     // 미리보기 한 개 번역
-    async function translatePreview(el, text, modeOverride = null) {
+    async function translatePreview(el, text, modeOverride = null, force = false) {
         if (_previewProcessed.has(el)) return null;
         _previewProcessed.add(el);
         
@@ -736,21 +736,26 @@ function setupChatPreviewTranslation() {
                 el.textContent = cached.translated;
                 el.style.opacity = '1';
                 el.title = `🐱 원문: ${text.substring(0, 100)}...`;
-                console.log(`[CAT] 📁 미리보기 캐시 히트`);
+                console.log(`[CAT] 📁 미리보기 캐시 히트: "${text.substring(0,40)}..." → "${cached.translated.substring(0,40)}..."`);
+                if (force) catNotify(`${getThemeEmoji()} 💾 캐시 히트`, "info");
                 return 'cached';
             }
             
             // 2. 캐시 없음 → mode 'auto'일 때만 API 호출
-            if (mode !== 'auto') return null;
+            if (mode !== 'auto') {
+                if (force) catNotify(`${getThemeEmoji()} ⚠️ 캐시 없음 (mode: ${mode})`, "warning");
+                return null;
+            }
             
             // 시각적 피드백
             el.style.opacity = '0.5';
             el.style.fontStyle = 'italic';
             
+            // 🚨 force 모드일 때는 silent 끄기 (에러 보이게)
             const { fetchTranslation } = await import('./translator.js');
             const result = await fetchTranslation(text, settings, stContext, { 
                 forceLang: targetLang,
-                silent: true  // 미리보기는 알림 조용히
+                silent: !force
             });
             
             if (result && result.text) {
@@ -761,12 +766,14 @@ function setupChatPreviewTranslation() {
                 el.style.opacity = '1';
                 el.style.fontStyle = 'normal';
                 el.title = `🐱 원문: ${text.substring(0, 100)}...`;
-                console.log(`[CAT] 📁 미리보기 번역 완료`);
+                console.log(`[CAT] 📁 미리보기 번역 완료: "${text.substring(0,40)}..." → "${result.text.substring(0,40)}..."`);
+                if (force) catNotify(`${getThemeEmoji()} ✅ 번역 완료 (${result.text.length}자)`, "success");
                 return 'translated';
             } else {
                 el.style.opacity = '1';
                 el.style.fontStyle = 'normal';
                 _previewProcessed.delete(el);
+                if (force) catNotify(`${getThemeEmoji()} ❌ 번역 결과 없음 (result=${result ? '있음 but text 없음' : 'null'})`, "error");
                 return null;
             }
         } catch (e) {
@@ -774,6 +781,7 @@ function setupChatPreviewTranslation() {
             el.style.opacity = '1';
             el.style.fontStyle = 'normal';
             _previewProcessed.delete(el);
+            if (force) catNotify(`${getThemeEmoji()} ❌ 미리보기 번역 에러: ${e.message?.substring(0, 50)}`, "error");
             return null;
         }
     }
@@ -855,16 +863,21 @@ function setupChatPreviewTranslation() {
             }
             
             // 번역 처리 (영문만)
-            // force 모드 시 settings.previewTranslate가 'off'면 'cache'로 처리
-            const effectiveTranslateMode = (force && translateMode === 'off') ? 'cache' : translateMode;
+            // force 모드 시 옵션 무시하고 'auto' 강제 (사용자가 명시적으로 버튼 누른 것)
+            const effectiveTranslateMode = force ? 'auto' : translateMode;
             if (effectiveTranslateMode !== 'off') {
                 const elements = findPreviewElements();
                 if (elements.length > 0) {
                     console.log(`[CAT] 📁 미리보기 ${elements.length}개 발견 (번역 대상)`);
                     
+                    // force 모드: 처음 알림
+                    if (force) {
+                        catNotify(`${getThemeEmoji()} 미리보기 ${elements.length}개 번역 시작 (API 호출)`, "info");
+                    }
+                    
                     // 1초 간격으로 순차 처리 (API rate limit 방지)
                     for (const { el, text } of elements) {
-                        const result = await translatePreview(el, text, effectiveTranslateMode);
+                        const result = await translatePreview(el, text, effectiveTranslateMode, force);
                         if (result === 'translated' || result === 'cached') translateCount++;
                         await new Promise(r => setTimeout(r, 800)); // 0.8초 간격
                     }
@@ -884,7 +897,7 @@ function setupChatPreviewTranslation() {
         }
     }
     
-    // 🚨 헤더에 수동 처리 버튼 주입
+    // 🚨 헤더에 전체 처리 버튼 주입
     function injectHeaderButton() {
         if (_headerButtonInjected && document.querySelector('#cat-preview-manual-btn')) return;
         
@@ -892,7 +905,6 @@ function setupChatPreviewTranslation() {
         if (headers.length === 0) return;
         
         for (const header of headers) {
-            // 이미 추가됐으면 스킵
             if (header.querySelector('#cat-preview-manual-btn')) continue;
             
             const btn = document.createElement('div');
@@ -901,12 +913,15 @@ function setupChatPreviewTranslation() {
             btn.setAttribute('role', 'button');
             btn.setAttribute('tabindex', '0');
             btn.style.cssText = 'display:flex; align-items:center; gap:5px;';
-            btn.innerHTML = `<span style="font-size:16px;">${getThemeEmoji ? getThemeEmoji() : '🐱'}</span><span>미리보기 처리</span>`;
-            btn.title = '마크업 정리 + 영문 번역 (강제 실행)';
+            btn.innerHTML = `<span style="font-size:16px;">${getThemeEmoji ? getThemeEmoji() : '🐱'}</span><span>전체 번역</span>`;
+            btn.title = '모든 미리보기 정리 + 번역 (API 호출 발생)';
             
-            btn.addEventListener('click', () => processQueue(true));
+            btn.addEventListener('click', () => {
+                if (confirm('모든 미리보기를 번역할까요?\n채팅 수만큼 API 호출이 발생합니다.\n\n개별 번역을 원하면 각 채팅 옆 🐯 버튼을 사용하세요.')) {
+                    processQueue(true);
+                }
+            });
             
-            // 검색바 앞에 삽입
             const searchBar = header.querySelector('#select_chat_search, [id*="search"]');
             if (searchBar) {
                 header.insertBefore(btn, searchBar);
@@ -919,10 +934,97 @@ function setupChatPreviewTranslation() {
         }
     }
     
+    // 🚨 각 채팅 항목에 개별 번역 버튼 주입
+    function injectItemButtons() {
+        const blocks = document.querySelectorAll('.select_chat_block');
+        let injected = 0;
+        
+        for (const block of blocks) {
+            if (block.dataset.catBtnInjected === 'true') continue;
+            
+            // 미리보기 텍스트 찾기
+            const previewEl = block.querySelector('.select_chat_block_mes, .select_chat_block_message');
+            if (!previewEl) continue;
+            
+            const previewText = previewEl.textContent?.trim();
+            if (!previewText || previewText.length < 30) continue;
+            
+            // 이미 한국어면 정리 버튼만 표시
+            const isEnglish = isEnglishPreview(previewText);
+            
+            // 다운로드 버튼 영역 찾기 (export 버튼들 옆)
+            const buttonArea = block.querySelector('.flex-container.gap10px:has(.exportRawChatButton), .flex-container.gap10px:has(.PastChat_cross)');
+            const targetArea = buttonArea || block.querySelector('.flex-container.alignItemsCenter:last-child');
+            if (!targetArea) continue;
+            
+            // 개별 번역 버튼 생성
+            const btn = document.createElement('div');
+            btn.className = 'cat-item-translate-btn opacity50p hoverglow';
+            btn.style.cssText = 'cursor:pointer; font-size:14px; padding:0 4px;';
+            btn.innerHTML = isEnglish ? '🐯' : '🧹';
+            btn.title = isEnglish ? '이 채팅 미리보기 번역 (API 호출)' : '이 채팅 미리보기 마크업 정리';
+            
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                
+                btn.style.opacity = '0.3';
+                btn.style.pointerEvents = 'none';
+                
+                try {
+                    // 정리 먼저 (항상)
+                    if (previewEl.dataset.catCleanupDone !== 'true') {
+                        const cleaned = cleanupPreviewText(previewText);
+                        if (cleaned !== previewText && cleaned.length > 0) {
+                            if (!previewEl.dataset.catOriginalPreview) {
+                                previewEl.dataset.catOriginalPreview = previewText;
+                            }
+                            previewEl.textContent = cleaned;
+                            previewEl.dataset.catCleanupDone = 'true';
+                        }
+                    }
+                    
+                    // 영문이면 번역
+                    const currentText = previewEl.textContent.trim();
+                    if (isEnglishPreview(currentText)) {
+                        catNotify(`${getThemeEmoji()} 번역 중...`, "info");
+                        const result = await translatePreview(previewEl, currentText, 'auto', true);
+                        if (result === 'translated' || result === 'cached') {
+                            btn.innerHTML = '✅';
+                            setTimeout(() => { btn.innerHTML = '🐯'; }, 2000);
+                        } else {
+                            btn.innerHTML = '❌';
+                            setTimeout(() => { btn.innerHTML = '🐯'; }, 2000);
+                        }
+                    } else {
+                        btn.innerHTML = '✅';
+                        setTimeout(() => { btn.innerHTML = isEnglishPreview(currentText) ? '🐯' : '🧹'; }, 2000);
+                        catNotify(`${getThemeEmoji()} 정리 완료`, "success");
+                    }
+                } catch (err) {
+                    btn.innerHTML = '❌';
+                    catNotify(`${getThemeEmoji()} 처리 실패: ${err.message?.substring(0,50)}`, "error");
+                    setTimeout(() => { btn.innerHTML = isEnglish ? '🐯' : '🧹'; }, 2000);
+                } finally {
+                    btn.style.opacity = '0.5';
+                    btn.style.pointerEvents = 'auto';
+                }
+            });
+            
+            // 다운로드 버튼들 앞에 삽입
+            targetArea.insertBefore(btn, targetArea.firstChild);
+            block.dataset.catBtnInjected = 'true';
+            injected++;
+        }
+        
+        if (injected > 0) console.log(`[CAT] 📁 개별 번역 버튼 ${injected}개 주입`);
+    }
+    
     // MutationObserver: 채팅 팝업 등장 감지
     const previewObserver = new MutationObserver(() => {
         // 🚨 버튼은 옵션 OFF여도 항상 주입 (사용자가 수동 실행 가능)
         injectHeaderButton();
+        injectItemButtons();
         
         const translateMode = settings.previewTranslate || 'off';
         const cleanupMode = settings.previewCleanup || 'off';
@@ -933,6 +1035,6 @@ function setupChatPreviewTranslation() {
     });
     previewObserver.observe(document.body, { childList: true, subtree: true });
     
-    console.log(`[CAT] 📁 채팅 미리보기 옵저버 등록 (자동 + 수동 버튼)`);
+    console.log(`[CAT] 📁 채팅 미리보기 옵저버 등록 (자동 + 수동 + 개별)`);
 }
 
