@@ -114,6 +114,57 @@ Correct: <div class="box">- 그녀가 깊이 한숨을 쉰다.</div>
 Source: <!-- [Character Profiles]\\nDesires: To protect her forest.\\n-->
 Correct: <!-- [Character Profiles]\\nDesires: 그녀의 숲을 지키는 것.\\n-->
 
+[PARAGRAPH STRUCTURE - CRITICAL]
+The source text uses BLANK LINES (double newlines \n\n) to separate paragraphs. This structure MUST be preserved EXACTLY.
+
+**Rules:**
+1. Count the number of paragraphs (blocks separated by blank lines) in the source
+2. The output MUST have the SAME number of paragraphs
+3. NEVER merge paragraphs into a single block of text
+4. NEVER drop blank lines between paragraphs
+5. The visual rhythm of the original (short lines, long paragraphs, dialogue breaks) MUST be preserved
+
+**Common failure mode (DO NOT DO THIS):**
+Source:
+```
+"Hello," she said.
+
+He turned around. The street was empty.
+
+"Are you alright?"
+```
+
+WRONG (merged into one block):
+```
+"안녕." 그녀가 말했다. 그가 돌아섰다. 거리는 비어 있었다. "괜찮아?"
+```
+
+CORRECT (paragraph structure preserved):
+```
+"안녕." 그녀가 말했다.
+
+그가 돌아섰다. 거리는 비어 있었다.
+
+"괜찮아?"
+```
+
+[QUOTATION MARKS - NEVER DROP]
+Every opening quote MUST have a matching closing quote. This is especially critical for:
+1. The VERY FIRST LINE if it's dialogue — the opening quote " is often forgotten. ALWAYS check
+2. Dialogue at paragraph breaks — the closing quote before the line break MUST be present
+3. Nested quotes — preserve both inner and outer quote marks
+
+**Verification before output:**
+- Count opening " and closing " in source — they should match
+- Count opening " and closing " in your translation — they should ALSO match
+- If a sentence starts with " in source, it MUST start with " in translation
+- If a sentence ends with " in source, it MUST end with " in translation
+
+WRONG (lost opening quote on first line):
+Source: "She glanced over her shoulder. "Are you sure?"
+WRONG output: 그녀가 어깨 너머로 흘끗 봤다. "확실해?"
+RIGHT output: "그녀가 어깨 너머로 흘끗 봤다. "확실해?"
+
 If the input is a single word, return only the translated single word.
 
 [KOREAN KINSHIP TERMS - CRITICAL]

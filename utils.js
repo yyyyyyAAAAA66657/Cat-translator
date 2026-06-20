@@ -156,7 +156,153 @@ export function cleanResult(text, originalText = null) {
         .replace(/\r\n/g, "\n")        // \r\n → \n 통일
         .replace(/\n{4,}/g, "\n\n\n"); // 빈줄 4개 이상만 정리 (3개까지는 유지)
     
+    // 🚨 문단 구조 보존: 원문과 비교해서 문단 수 부족하면 경고
+    if (originalText && originalText.length > 200) {
+        const origParagraphs = originalText.split(/\n{2,}/).filter(p => p.trim().length > 0);
+        const transParagraphs = cleaned.split(/\n{2,}/).filter(p => p.trim().length > 0);
+        
+        // 원문 3문단 이상인데 번역이 1문단으로 합쳐졌으면 명확한 실패
+        if (origParagraphs.length >= 3 && transParagraphs.length === 1) {
+            console.warn(`[CAT] ⚠️ 문단 구조 파괴: 원문 ${origParagraphs.length}문단 → 번역 1문단`);
+            
+            // 자동 복구 시도: 문장 끝 패턴 (.!? + 다음 대문자/대사)로 분할 후 원문 비율 맞춤
+            cleaned = restoreParagraphStructure(cleaned, origParagraphs.length);
+        } else if (origParagraphs.length >= 3 && transParagraphs.length < origParagraphs.length * 0.5) {
+            console.warn(`[CAT] ⚠️ 문단 수 부족: 원문 ${origParagraphs.length}문단 → 번역 ${transParagraphs.length}문단`);
+        }
+    }
+    
+    // 🚨 따옴표 균형 검사 및 자동 복구
+    cleaned = balanceQuotes(cleaned, originalText);
+    
     return cleaned.trim();
+}
+
+// 🚨 문단 구조 자동 복구 (한 덩어리로 합쳐진 경우)
+function restoreParagraphStructure(text, targetParagraphCount) {
+    // 대사 시작/종료 + 묘사 전환 패턴으로 분할
+    // 1. 닫는 따옴표 뒤 + 한국어 시작 → 문단 경계
+    // 2. 한국어 종결 뒤 + 여는 따옴표 → 문단 경계
+    
+    // 자연스러운 분할 후보 위치 (점수 부여)
+    const candidates = [];
+    const len = text.length;
+    
+    // 패턴 1: "..." 다음 문장 (대사 종료 후 묘사)
+    for (let m of text.matchAll(/(["」』])\s+([가-힣A-Z])/g)) {
+        candidates.push({ pos: m.index + m[1].length, score: 3 });
+    }
+    
+    // 패턴 2: 문장 끝(다.) 다음 대사 (묘사 종료 후 대사)
+    for (let m of text.matchAll(/([다요까네])\.\s+(["「『])/g)) {
+        candidates.push({ pos: m.index + 2, score: 3 });
+    }
+    
+    // 패턴 3: 일반 문장 종료 (다./요./까?)
+    for (let m of text.matchAll(/([다요까네])\.\s+([가-힣])/g)) {
+        candidates.push({ pos: m.index + 2, score: 1 });
+    }
+    
+    if (candidates.length === 0) return text; // 분할 불가
+    
+    // 후보 정렬 (위치 순)
+    candidates.sort((a, b) => a.pos - b.pos);
+    
+    // 목표 문단 수에 가장 가까운 분할점 선택
+    const breakCount = targetParagraphCount - 1;
+    if (candidates.length < breakCount) return text; // 후보가 부족
+    
+    // 균등 분할 위치 계산
+    const ideal = [];
+    for (let i = 1; i <= breakCount; i++) {
+        ideal.push((len * i) / targetParagraphCount);
+    }
+    
+    // 각 ideal 위치에 가장 가까운 후보 선택
+    const breakPoints = [];
+    const used = new Set();
+    for (const idealPos of ideal) {
+        let best = null;
+        let bestDist = Infinity;
+        for (let i = 0; i < candidates.length; i++) {
+            if (used.has(i)) continue;
+            const dist = Math.abs(candidates[i].pos - idealPos) - candidates[i].score * 30;
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = i;
+            }
+        }
+        if (best !== null) {
+            breakPoints.push(candidates[best].pos);
+            used.add(best);
+        }
+    }
+    
+    breakPoints.sort((a, b) => a - b);
+    
+    // 분할점에 \n\n 삽입
+    let result = '';
+    let last = 0;
+    for (const bp of breakPoints) {
+        result += text.substring(last, bp) + '\n\n';
+        last = bp;
+    }
+    result += text.substring(last);
+    
+    console.log(`[CAT] 🔧 문단 자동 복구: 1개 → ${targetParagraphCount}개`);
+    return result;
+}
+
+// 🚨 따옴표 균형 검사 및 복구
+function balanceQuotes(text, originalText) {
+    // 영어 따옴표: " (smart quotes는 별도)
+    // 한국어 따옴표: "", 「」, 『』
+    
+    const countQuotes = (s, pattern) => (s.match(pattern) || []).length;
+    
+    // 1. 첫 줄 대사 따옴표 누락 복구
+    // 원문 첫 줄이 "..." 패턴인데 번역 첫 줄이 따옴표 없이 시작하면 복구
+    if (originalText) {
+        const origFirstLine = originalText.split(/\n/)[0]?.trim();
+        const transFirstLine = text.split(/\n/)[0]?.trim();
+        
+        if (origFirstLine && transFirstLine) {
+            const origStartsWithQuote = /^["「『]/.test(origFirstLine);
+            const transStartsWithQuote = /^["「『]/.test(transFirstLine);
+            
+            // 원문은 따옴표로 시작, 번역은 안 그러면 → 첫 따옴표 추가
+            if (origStartsWithQuote && !transStartsWithQuote) {
+                // 한국어 따옴표 ㅍ스타일 매칭
+                const quoteChar = origFirstLine[0];
+                const targetQuote = quoteChar === '"' ? '"' : quoteChar;
+                text = targetQuote + text;
+                console.log(`[CAT] 🔧 첫 줄 따옴표 복구: ${targetQuote} 추가`);
+            }
+        }
+    }
+    
+    // 2. 따옴표 균형 검사 (열린 vs 닫힌)
+    // ASCII 따옴표는 양방향이라 짝수면 OK
+    const ascii = countQuotes(text, /"/g);
+    if (ascii % 2 !== 0) {
+        // 홀수 → 마지막에 " 추가 (닫는 따옴표 누락 가능성)
+        text = text.trimEnd() + '"';
+        console.log(`[CAT] 🔧 ASCII 따옴표 균형 복구: 닫는 " 추가`);
+    }
+    
+    // 한국어 큰따옴표
+    const koOpen = countQuotes(text, /"/g);
+    const koClose = countQuotes(text, /"/g);
+    if (koOpen > koClose) {
+        text = text.trimEnd() + '"';
+        console.log(`[CAT] 🔧 한국어 따옴표 균형 복구: 닫는 " 추가`);
+    } else if (koClose > koOpen) {
+        // 닫는 게 더 많음 → 맨 앞에 열린 따옴표 추가
+        text = '"' + text;
+        console.log(`[CAT] 🔧 한국어 따옴표 균형 복구: 여는 " 앞에 추가`);
+    }
+    
+    return text;
 }
 
 export function getCacheModelKey(settings) {
@@ -343,14 +489,4 @@ export function analyzeSpeechPatterns(contextMessages) {
     });
     
     return patterns.length > 0 ? patterns.join('\n') : null;
-}
-
-// 🚨 v1.0.5: 한국어 위주 텍스트 판정 (영어+한국어 혼합 케이스 통과)
-// 영어 본문에 한국어 인포블록/단어/인용이 섞인 경우는 false 반환.
-// 한국어 본문에 영어가 살짝 섞인 경우만 true (=한국어 우세).
-export function isMostlyKorean(text) {
-    if (!text || text.length < 10) return false;
-    const koreanCount = (text.match(/[가-힣]/g) || []).length;
-    const englishCount = (text.match(/[a-zA-Z]/g) || []).length;
-    return koreanCount > englishCount && koreanCount > 10;
 }
