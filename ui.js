@@ -91,18 +91,17 @@ export function setupSettingsPanel(settings, stContext, saveSettingsFn) {
                 </select>
             </div>
             <div class="cat-setting-row">
-                <label>📁 채팅 파일 관리 미리보기 번역 <span style="font-size:0.8em; opacity:0.6;">(채팅 기록의 마지막 메시지)</span></label>
+                <label>📁 채팅 파일 관리 미리보기 번역 <span style="font-size:0.8em; opacity:0.6;">(자동 옵저버, 캐시 우선 → API)</span></label>
                 <select id="ct-preview-translate" class="text_pole">
-                    <option value="off" ${(!settings.previewTranslate || settings.previewTranslate === 'off') ? 'selected' : ''}>OFF</option>
-                    <option value="cache" ${settings.previewTranslate === 'cache' ? 'selected' : ''}>캐시만 (이미 번역한 것만, 추가 호출 X)</option>
-                    <option value="auto" ${settings.previewTranslate === 'auto' ? 'selected' : ''}>자동 번역 (캐시 없으면 API 호출)</option>
+                    <option value="off" ${(!settings.previewTranslate || settings.previewTranslate === 'off' || settings.previewTranslate === 'cache') ? 'selected' : ''}>OFF</option>
+                    <option value="on" ${(settings.previewTranslate === 'on' || settings.previewTranslate === 'auto') ? 'selected' : ''}>ON (자동 처리)</option>
                 </select>
             </div>
             <div class="cat-setting-row">
-                <label>🧹 미리보기 마크업 정리 <span style="font-size:0.8em; opacity:0.6;">(yaml/&lt;memo&gt;/&lt;info_panel&gt; 같은 raw 태그 숨김)</span></label>
+                <label>🧹 미리보기 마크업 정리 <span style="font-size:0.8em; opacity:0.6;">(yaml/태그 숨김)</span></label>
                 <select id="ct-preview-cleanup" class="text_pole">
-                    <option value="off" ${(!settings.previewCleanup || settings.previewCleanup === 'off') ? 'selected' : ''}>OFF (원본 그대로)</option>
-                    <option value="on" ${settings.previewCleanup === 'on' ? 'selected' : ''}>ON (대화/지문만 깔끔하게)</option>
+                    <option value="off" ${(!settings.previewCleanup || settings.previewCleanup === 'off') ? 'selected' : ''}>OFF</option>
+                    <option value="on" ${settings.previewCleanup === 'on' ? 'selected' : ''}>ON</option>
                 </select>
             </div>
             <div class="cat-setting-row" style="display:none"><label>시스템 보호막 (🔒 고정)</label><textarea id="ct-shield" class="text_pole cat-readonly-area" rows="3" readonly>${SYSTEM_SHIELD}</textarea></div>
