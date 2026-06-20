@@ -1004,7 +1004,11 @@ function setupChatPreviewTranslation() {
             const targetArea = buttonArea || block.querySelector('.flex-container.alignItemsCenter:last-child');
             if (!targetArea) continue;
             
-            // 되돌리기 함수 (공통)
+            // 🚨 사용자 테마 따라 아이콘 자동 결정
+            const themeIcon = getThemeEmoji(); // 🐯 또는 🐱
+            const doneIcon = getCompletionEmoji(); // 🍖 또는 🐟
+            
+            // 되돌리기 함수
             const revertItem = (btn, defaultIcon, defaultTitle) => {
                 const originalText = previewEl.dataset.catOriginalPreview;
                 if (originalText) {
@@ -1021,11 +1025,10 @@ function setupChatPreviewTranslation() {
                 btn.title = defaultTitle;
             };
             
-            // 번역 처리 함수
-            const handleTranslate = async (btn, modelType, doneIcon) => {
+            // 번역 처리 함수 (사용자 현재 모델 그대로 사용 - 모델 강제 X)
+            const handleTranslate = async (btn) => {
                 if (btn.dataset.catBtnState === 'done') {
-                    const isPro = modelType === 'pro';
-                    revertItem(btn, isPro ? '🐯' : '🐱', isPro ? '이 채팅 번역 (Pro 모델)' : '이 채팅 번역 (Flash 모델)');
+                    revertItem(btn, getThemeEmoji(), '이 채팅 번역 (현재 모델)');
                     return;
                 }
                 
@@ -1047,26 +1050,27 @@ function setupChatPreviewTranslation() {
                     
                     const currentText = previewEl.textContent.trim();
                     if (isEnglishPreview(currentText)) {
-                        catNotify(`${getThemeEmoji()} ${modelType === 'pro' ? '🐯 Pro' : '🐱 Flash'} 번역 중...`, "info");
-                        const result = await translatePreview(previewEl, currentText, 'on', true, modelType);
+                        catNotify(`${getThemeEmoji()} 번역 중...`, "info");
+                        // modelType=null → 사용자 현재 모델 그대로 사용
+                        const result = await translatePreview(previewEl, currentText, 'on', true, null);
                         if (result === 'translated' || result === 'cached') {
                             btn.dataset.catBtnState = 'done';
-                            btn.innerHTML = doneIcon;
-                            btn.title = `되돌리기 (원문 영어로 복원)`;
-                            catNotify(`${getThemeEmoji()} ✅ ${modelType === 'pro' ? 'Pro' : 'Flash'} 번역 완료`, "success");
+                            btn.innerHTML = getCompletionEmoji(); // 🍖 또는 🐟
+                            btn.title = '되돌리기 (원문 영어로 복원)';
+                            catNotify(`${getThemeEmoji()} ✅ 번역 완료`, "success");
                         } else {
                             btn.innerHTML = '❌';
-                            setTimeout(() => { btn.innerHTML = modelType === 'pro' ? '🐯' : '🐱'; }, 2000);
+                            setTimeout(() => { btn.innerHTML = getThemeEmoji(); }, 2000);
                         }
                     } else {
                         btn.innerHTML = '⚠️';
                         catNotify(`${getThemeEmoji()} 한국어인 것 같아요. 🧹로 정리만 하세요`, "warning");
-                        setTimeout(() => { btn.innerHTML = modelType === 'pro' ? '🐯' : '🐱'; }, 2000);
+                        setTimeout(() => { btn.innerHTML = getThemeEmoji(); }, 2000);
                     }
                 } catch (err) {
                     btn.innerHTML = '❌';
                     catNotify(`${getThemeEmoji()} 처리 실패: ${err.message?.substring(0,50)}`, "error");
-                    setTimeout(() => { btn.innerHTML = modelType === 'pro' ? '🐯' : '🐱'; }, 2000);
+                    setTimeout(() => { btn.innerHTML = getThemeEmoji(); }, 2000);
                 } finally {
                     btn.style.opacity = '0.7';
                     btn.style.pointerEvents = 'auto';
@@ -1111,40 +1115,36 @@ function setupChatPreviewTranslation() {
                 }
             };
             
-            // 버튼 생성 헬퍼
-            const makeBtn = (icon, title, mode) => {
-                const btn = document.createElement('div');
-                btn.className = 'cat-item-translate-btn opacity50p hoverglow';
-                btn.style.cssText = 'cursor:pointer; font-size:14px; padding:0 4px;';
-                btn.innerHTML = icon;
-                btn.title = title;
-                btn.dataset.catBtnState = 'ready';
+            // 🚨 한 채팅에 한 버튼만 (테마 따라 호랑이/고양이 자동)
+            const btn = document.createElement('div');
+            btn.className = 'cat-item-translate-btn opacity50p hoverglow';
+            btn.style.cssText = 'cursor:pointer; font-size:14px; padding:0 4px;';
+            btn.dataset.catBtnState = 'ready';
+            
+            if (isEnglish) {
+                btn.innerHTML = themeIcon;
+                btn.title = `이 채팅 번역 (현재 모델)`;
                 btn.addEventListener('click', async (e) => {
                     e.stopPropagation();
                     e.preventDefault();
-                    if (mode === 'cleanup') await handleCleanup(btn);
-                    else await handleTranslate(btn, mode, mode === 'pro' ? '🥩' : '🐟');
+                    await handleTranslate(btn);
                 });
-                return btn;
-            };
-            
-            if (isEnglish) {
-                // 영문: 🐯 Pro + 🐱 Flash 두 버튼
-                const proBtn = makeBtn('🐯', '이 채팅 번역 (Pro 모델 - 좋은 품질, 비쌈)', 'pro');
-                const flashBtn = makeBtn('🐱', '이 채팅 번역 (Flash 모델 - 빠르고 쌈)', 'flash');
-                targetArea.insertBefore(flashBtn, targetArea.firstChild);
-                targetArea.insertBefore(proBtn, targetArea.firstChild);
             } else {
-                // 한국어: 🧹 정리만
-                const cleanBtn = makeBtn('🧹', '이 채팅 마크업 정리 (yaml/태그 숨김, 비용 0)', 'cleanup');
-                targetArea.insertBefore(cleanBtn, targetArea.firstChild);
+                btn.innerHTML = '🧹';
+                btn.title = '이 채팅 마크업 정리 (yaml/태그 숨김, 비용 0)';
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    await handleCleanup(btn);
+                });
             }
             
+            targetArea.insertBefore(btn, targetArea.firstChild);
             block.dataset.catBtnInjected = 'true';
             injected++;
         }
         
-        if (injected > 0) console.log(`[CAT] 📁 개별 버튼 ${injected}개 주입 (Pro/Flash/정리)`);
+        if (injected > 0) console.log(`[CAT] 📁 개별 버튼 ${injected}개 주입 (테마: ${getThemeEmoji()})`);
     }
     
     // MutationObserver: 채팅 팝업 등장 감지
