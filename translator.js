@@ -165,117 +165,29 @@ Source: "She glanced over her shoulder. "Are you sure?"
 WRONG output: 그녀가 어깨 너머로 흘끗 봤다. "확실해?"
 RIGHT output: "그녀가 어깨 너머로 흘끗 봤다. "확실해?"
 
-[STATUS BOX / INFO PANEL - PRESERVE STRUCTURE STRICTLY]
-When source contains structured panels (HTML wrappers + yaml/json/list blocks):
-
-**HTML Wrappers — preserve EXACTLY:**
-- <info_panel>, <status_box>, <character_card>, <chat_box>, <scene_board>
-- <memo>, <small>, <details>, <summary>, <world_info>, <history>, <no_history>
-- Any custom tags the user defines
-- Both opening AND closing tags must remain in identical positions
-
-**Code Fences — preserve EXACTLY:**
-- Opening: \`\`\`yaml, \`\`\`json, \`\`\`md, \`\`\`
-- Closing: \`\`\`
-- All three backticks together (never partial)
-- Maintain the exact language tag (yaml/json/md)
-
-**Horizontal Rules — preserve EXACTLY:**
-- ___ (3+ underscores)
-- --- (3+ hyphens)
-- *** (3+ asterisks)
-
-**Inside yaml/json blocks:**
-- Every line MUST remain (no merging, no skipping)
-- Keep "- " bullets at line starts
-- Keep "key: value" format intact
-- KEYS keep their original language (English keys stay English, Korean keys stay Korean)
+[STATUS BOX / INFO PANEL - PRESERVE STRICTLY]
+For structured panels (HTML wrappers + yaml/json blocks):
+- Preserve ALL HTML tags exactly: <info_panel>, <status_box>, <character_card>, <chat_box>, <scene_board>, <memo>, <small>, <details>, <summary>, etc. (opening AND closing)
+- Preserve code fences exactly: \`\`\`yaml, \`\`\`json, \`\`\` (all three backticks together, never partial)
+- Preserve horizontal rules: ___ / --- / ***
+- Inside yaml/json: every line must remain; keep "- " bullets; keep "key: value" format
+- KEYS keep their original language (English keys stay English, Korean stay Korean)
 - VALUES translate to target language
-- Numbers, times, dates, locations: translate naturally
+- NEVER merge/skip yaml lines
 
-**Examples:**
+[OUTPUT LANGUAGE PURITY - ABSOLUTE]
+Output must be EXCLUSIVELY in target language. NO mixing.
+- To Korean: translate ALL English words (transliterate unknown proper nouns: Jenkins→젠킨스). Never leave "however/actually/well/anyway" untranslated. English only allowed inside code/HTML or glossary right-side.
+- To English: PURE English, NO Korean characters. Romanize Korean names (민수→Minsu, 서울→Seoul). Never leave "시저/그러나/그리고" in English output.
 
-WRONG (structure broken):
-\`\`\`
-"Original was: 시간: 7월 16일 등장인물: 김홍진 위치: 후쿠오카"
-\`\`\`
-
-CORRECT (preserved):
-\`\`\`
-- 시간: 7월 16일 (수) 오후 1:35
-- 등장인물: 김홍진, 김예린
-- 위치: 후쿠오카 공항
-\`\`\`
-
-WRONG (English keys translated):
-\`\`\`
-- 시간: 1:35 PM
-- 등장인물: Kim Hongjin
-\`\`\`
-(if source had "Time:" and "Characters:" in English, they should stay English)
-
-CORRECT (English keys preserved):
-\`\`\`
-- Time: 오후 1:35
-- Characters: 김홍진, 김예린
-\`\`\`
-
-WRONG (info_panel tag dropped):
-\`\`\`
-시간: 7월 16일
-___
-\`\`\`yaml
-...
-\`\`\`
-\`\`\`
-
-CORRECT (full structure):
-\`\`\`
-<info_panel>
-<memo><small>
-___
-\`\`\`yaml
-- 시간: 7월 16일
-\`\`\`
-</small></memo>
-</info_panel>
-\`\`\`
-
-[OUTPUT LANGUAGE PURITY - ABSOLUTE RULE]
-The OUTPUT must be EXCLUSIVELY in the target language. NO MIXING.
-
-**Translating to Korean:**
-- ALL English words MUST be translated to Korean
-- Unknown proper nouns → transliterate (e.g., "Jenkins" → "젠킨스", "Soap" → "소프")
-- Common loanwords already in Korean dictionary are OK (e.g., "메일", "프린터", "버튼")
-- NEVER leave random English like "however", "actually", "well", "anyway" untranslated
-- Output must contain only Korean characters, with English ONLY for:
-  • Code/technical strings inside backticks or HTML tags
-  • Glossary entries whose right side is explicitly English
-
-**Translating to English:**
-- Output must be PURE English with NO Korean characters
-- Korean proper nouns → romanize (e.g., "민수" → "Minsu", "서울" → "Seoul")
-- NEVER leave Korean characters like "시저", "그러나", "그리고" in English output
-- If unsure, transliterate; never leave source language characters
-
-[GLOSSARY - STRICT DIRECTION & APPLICATION]
-Glossary entries are in format "X=Y" where:
-- X = the form that appears in the SOURCE text
-- Y = the form that should appear in the TRANSLATED output
-
-**Direction matters:**
-- If source is Korean and entry is "시저=Caesar":
-  → "시저" appears in Korean source → MUST output as "Caesar" in English translation
-- If source is English and entry is "Caesar=시저":
-  → "Caesar" appears in English source → MUST output as "시저" in Korean translation
-
-**Critical rules:**
-- Apply ONLY entries where the LEFT side actually appears in the source text
-- Do NOT apply entries in reverse direction
-- Do NOT use the right side of an entry to "find" things in the source
-- After applying glossary, the OUTPUT must still be in pure target language
-- NEVER insert source-language form back into the output (e.g., don't put "시저" in English output even if it's in a glossary entry)
+[GLOSSARY - STRICT DIRECTION]
+Format "X=Y": X appears in SOURCE, Y must appear in OUTPUT.
+- "시저=Caesar" + Korean source: 시저 in source → Caesar in English output
+- "Caesar=시저" + English source: Caesar in source → 시저 in Korean output
+Rules:
+- Apply ONLY when LEFT side appears in source text
+- Do NOT apply in reverse direction
+- Output must still be pure target language (never insert source-form back)
 
 If the input is a single word, return only the translated single word.
 
@@ -471,12 +383,131 @@ export async function fetchTranslation(text, settings, stContext, options = {}) 
             // 🚨 프로필 모드: systemInstruction 미지원 → 유저 메시지에 합침
             console.log('[CAT] 🔌 프로필 모드: SYSTEM_SHIELD → user 메시지 합침');
             const fullPrompt = SYSTEM_SHIELD + '\n' + prompt;
+            
+            // 🚨 입력 크기 진단 (모델 거부 위험 사전 감지)
+            const promptLength = fullPrompt.length;
+            if (promptLength > 100000) {
+                console.warn(`[CAT] ⚠️ 프롬프트 매우 큼: ${promptLength}자 (~${Math.round(promptLength/4)}토큰)`);
+                if (!silent) console.warn(`[CAT] 프롬프트 길이 ${Math.round(promptLength/1000)}K자 - 모델이 거부할 수도 있어요`);
+            }
+            
             _lastDebugLog.mode = '프로필';
             _lastDebugLog.model = settings.profile.substring(0, 20) + '...';
             _lastDebugLog.prompt = fullPrompt;
-            const response = await stContext.ConnectionManagerRequestService.sendRequest(settings.profile, [{ role: "user", content: fullPrompt }], settings.maxTokens || 8192);
-            result = typeof response === 'string' ? response : (response.content || "");
-            _lastDebugLog.rawResponse = result;
+            
+            // 🚨 프로필 모드 빈 응답 재시도 (Gemini 3.5/3.0 Flash thinking 대응)
+            // 직접 연결과 달리 fetchWithRetry가 안 걸리므로 여기서 직접 재시도
+            // 3.5 Flash는 reasoning 모델 → thinking이 토큰 다 먹어서 빈 응답 가능 → 재시도 시 토큰 증량
+            const MAX_PROFILE_RETRIES = 3;
+            let lastProfileErr = null;
+            const baseMaxTokens = settings.maxTokens || 8192;
+            
+            for (let attempt = 0; attempt < MAX_PROFILE_RETRIES; attempt++) {
+                try {
+                    // 🚨 재시도 시 토큰 증량 (thinking 모델이 토큰 부족으로 빈 응답 주는 케이스 대응)
+                    // attempt 0: 기본값, attempt 1: 2배, attempt 2: 4배 (최대 32768)
+                    const attemptMaxTokens = Math.min(baseMaxTokens * Math.pow(2, attempt), 32768);
+                    if (attempt > 0) {
+                        console.log(`[CAT] 🪙 토큰 증량: ${attemptMaxTokens} (thinking 모델 대응)`);
+                    }
+                    
+                    const response = await stContext.ConnectionManagerRequestService.sendRequest(settings.profile, [{ role: "user", content: fullPrompt }], attemptMaxTokens);
+                    
+                    // 🚨 응답 필드 다양화 시도 (ST가 reasoning_content / content / text 등 다양한 형식 반환 가능)
+                    if (typeof response === 'string') {
+                        result = response;
+                    } else if (response) {
+                        // 우선순위 1: content (가장 일반적)
+                        result = response.content || '';
+                        
+                        // 우선순위 2: text 필드
+                        if (!result.trim() && response.text) result = response.text;
+                        
+                        // 우선순위 3: message.content (OpenAI 호환)
+                        if (!result.trim() && response.message?.content) result = response.message.content;
+                        
+                        // 우선순위 4: choices[0].message.content (OpenAI 표준)
+                        if (!result.trim() && response.choices?.[0]?.message?.content) result = response.choices[0].message.content;
+                        
+                        // 우선순위 5: candidates[0].content.parts[0].text (Gemini 표준)
+                        if (!result.trim() && response.candidates?.[0]?.content?.parts?.[0]?.text) {
+                            result = response.candidates[0].content.parts[0].text;
+                        }
+                        
+                        // 우선순위 6: reasoning_content + 다른 필드 (thinking 모델 케이스)
+                        // 만약 reasoning_content만 있고 실제 content 없으면 → 토큰 부족 신호
+                        if (!result.trim() && (response.reasoning_content || response.thinking)) {
+                            console.warn(`[CAT] 🤔 reasoning_content만 있고 실제 답변 없음 → thinking 토큰 부족 의심`);
+                        }
+                    }
+                    
+                    // 🚨 응답 자체가 비어있음 - 재시도
+                    if (!result || !result.trim()) {
+                        if (attempt < MAX_PROFILE_RETRIES - 1) {
+                            console.warn(`[CAT] 🔁 빈 응답 → 재시도 ${attempt + 1}/${MAX_PROFILE_RETRIES} (Flash 3.x thinking 모델 가능성)`);
+                            await sleep(1500 + Math.random() * 1500);
+                            continue;
+                        }
+                        throw new Error('빈 응답');
+                    }
+                    
+                    _lastDebugLog.rawResponse = result;
+                    lastProfileErr = null;
+                    break; // 성공
+                } catch (profileErr) {
+                    lastProfileErr = profileErr;
+                    _lastDebugLog.error = profileErr.message || 'API request failed';
+                    const errMsg = (profileErr.message || '').toLowerCase();
+                    
+                    // 일부 에러는 재시도해도 의미 없음 → 즉시 던지기
+                    if (errMsg.includes('401') || errMsg.includes('unauthor') || 
+                        errMsg.includes('403') || errMsg.includes('forbidden') ||
+                        errMsg.includes('413') || errMsg.includes('too large') || errMsg.includes('too long') || errMsg.includes('context length') ||
+                        errMsg.includes('safety') || errMsg.includes('blocked') || errMsg.includes('filter')) {
+                        break; // 재시도 안 함, 아래에서 분류 후 throw
+                    }
+                    
+                    // 5xx, timeout, 빈 응답 등은 재시도
+                    if (attempt < MAX_PROFILE_RETRIES - 1) {
+                        console.warn(`[CAT] 🔁 ${(profileErr.message || '').substring(0, 50)} → 재시도 ${attempt + 1}/${MAX_PROFILE_RETRIES}`);
+                        await sleep(1500 + attempt * 1000 + Math.random() * 1500);
+                        continue;
+                    }
+                }
+            }
+            
+            // 최종 실패 시 진단 메시지 매핑
+            if (lastProfileErr) {
+                const errMsg = (lastProfileErr.message || '').toLowerCase();
+                
+                if (errMsg.includes('빈 응답')) {
+                    throw new Error(`🤔 [thinking 토큰 부족] 3.5 Flash가 ${MAX_PROFILE_RETRIES}번 다 빈 응답. ST 프로필 설정에서: ⚙️ Max Response Length를 16384+로 / Reasoning Effort를 Minimum으로 변경 권장!`);
+                }
+                if (errMsg.includes('timeout') || errMsg.includes('aborted')) {
+                    throw new Error('⏱️ [프로필 타임아웃] 모델 응답 없음. 프로필 설정/모델 상태 확인');
+                }
+                if (errMsg.includes('401') || errMsg.includes('unauthor')) {
+                    throw new Error('🔑 [프로필 인증 실패] 프로필 API 키가 만료/잘못됨');
+                }
+                if (errMsg.includes('403') || errMsg.includes('forbidden')) {
+                    throw new Error('🚫 [프로필 접근 거부] 프로필 권한/지역 차단 확인');
+                }
+                if (errMsg.includes('429') || errMsg.includes('rate') || errMsg.includes('quota')) {
+                    throw new Error('🚦 [한도 초과] 분당/일당 한도 초과. 잠시 후 재시도');
+                }
+                if (errMsg.includes('413') || errMsg.includes('too large') || errMsg.includes('too long') || errMsg.includes('context length')) {
+                    throw new Error(`📏 [입력 너무 김] 프롬프트 ${Math.round(promptLength/1000)}K자. 컨텍스트 범위 줄이거나 본문 짧게`);
+                }
+                if (errMsg.includes('500') || errMsg.includes('502') || errMsg.includes('503') || errMsg.includes('504')) {
+                    throw new Error('💥 [서버 오류] 모델 서버 문제. 잠시 후 재시도');
+                }
+                if (errMsg.includes('safety') || errMsg.includes('blocked') || errMsg.includes('filter')) {
+                    throw new Error('🛑 [안전 필터] 모델이 콘텐츠 거부. 모델 변경 또는 본문 수정 필요');
+                }
+                
+                // 기본 (분류 안 됨)
+                throw new Error(`❌ [프로필 모드 실패] ${(lastProfileErr.message || 'API request failed').substring(0, 120)}`);
+            }
         } else {
             // Vertex 모델 분기
             let actualModel = settings.directModel;
@@ -504,7 +535,19 @@ export async function fetchTranslation(text, settings, stContext, options = {}) 
             
             const baseTemp = parseFloat(settings.temperature) || 0.3; const temperature = prevTranslation ? Math.min(baseTemp + 0.3, 1.0) : baseTemp; const maxTokens = parseInt(settings.maxTokens) || 8192;
             
-            const fetchBody = { systemInstruction: { parts: [{ text: SYSTEM_SHIELD }] }, contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { temperature, maxOutputTokens: maxTokens }, safetySettings: SAFETY_SETTINGS };
+            // 🚨 Gemini 3.x thinking 모델 대응: thinkingBudget 최소화
+            // 3.5/3.0 Flash, 2.5 Pro는 reasoning 모델 → thinking이 토큰 다 먹어서 빈 응답 가능
+            // 번역 작업은 패턴 매칭이라 thinking 거의 무의미 → 최소값(128)로 설정
+            // (Pro 모델은 0 불가, 최소 128 필요 / Flash는 0 가능하지만 호환성 위해 128 통일)
+            const generationConfig = { temperature, maxOutputTokens: maxTokens };
+            const modelLower = (actualModel || '').toLowerCase();
+            const isThinkingModel = /gemini-3|gemini-2\.5-pro/i.test(modelLower);
+            if (isThinkingModel) {
+                generationConfig.thinkingConfig = { thinkingBudget: 128 };
+                console.log(`[CAT] 🤔 thinking 모델 감지 (${actualModel}) → thinkingBudget=128 (번역엔 thinking 불필요)`);
+            }
+            
+            const fetchBody = { systemInstruction: { parts: [{ text: SYSTEM_SHIELD }] }, contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig, safetySettings: SAFETY_SETTINGS };
             _lastDebugLog.mode = '직접 연결';
             _lastDebugLog.model = actualModel;
             _lastDebugLog.prompt = prompt;
